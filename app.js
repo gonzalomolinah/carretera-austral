@@ -42,6 +42,22 @@ const defaultData = {
 let state = load();
 let draggedId = null;
 
+const typeStyles = {
+  'Naturaleza': { cls: 'type-naturaleza', label: '🌲 Naturaleza' },
+  'Aventura': { cls: 'type-aventura', label: '🧗 Aventura' },
+  'Cultura': { cls: 'type-cultura', label: '🏛️ Cultura' },
+  'Gastronomía': { cls: 'type-gastronomia', label: '🍲 Gastronomía' },
+  'Logística': { cls: 'type-logistica', label: '🛳️ Logística' }
+};
+
+const markLabels = {
+  must: '⭐ Imprescindible',
+  booked: '🎟️ Reservado',
+  done: '✅ Completado',
+  lodging: '🛏️ Alojamiento',
+  dayvisit: '📍 Visita día'
+};
+
 const itineraryEl = document.getElementById('itinerary');
 const daySelectEl = document.getElementById('daySelect');
 const form = document.getElementById('attractionForm');
@@ -70,14 +86,32 @@ function buildCard(item) {
   const card = cardTemplate.content.firstElementChild.cloneNode(true);
   card.dataset.id = item.id;
   card.querySelector('.title').textContent = item.name;
-  card.querySelector('.type').textContent = item.type;
+
+  const typeEl = card.querySelector('.type');
+  const typeInfo = typeStyles[item.type] || { cls: 'type-logistica', label: item.type };
+  typeEl.textContent = typeInfo.label;
+  typeEl.classList.add(typeInfo.cls);
+
   card.querySelector('.meta').textContent = `${item.location} · ${item.duration}h`;
+
+  const quickMarksEl = card.querySelector('.quick-marks');
+  const renderQuickMarks = () => {
+    quickMarksEl.innerHTML = '';
+    Object.entries(markLabels).forEach(([key, label]) => {
+      if (!item.marks[key]) return;
+      const tag = document.createElement('span');
+      tag.className = 'quick-tag';
+      tag.textContent = label;
+      quickMarksEl.appendChild(tag);
+    });
+  };
 
   card.querySelectorAll('[data-mark]').forEach(cb => {
     const key = cb.dataset.mark;
     cb.checked = Boolean(item.marks[key]);
     cb.addEventListener('change', () => {
       item.marks[key] = cb.checked;
+      renderQuickMarks();
       save();
     });
   });
@@ -87,6 +121,13 @@ function buildCard(item) {
   notes.addEventListener('input', () => {
     item.notes = notes.value;
     save();
+  });
+
+  const details = card.querySelector('.details');
+  const editBtn = card.querySelector('.edit');
+  editBtn.addEventListener('click', () => {
+    details.classList.toggle('hidden');
+    editBtn.textContent = details.classList.contains('hidden') ? 'Editar' : 'Cerrar';
   });
 
   card.querySelector('.delete').addEventListener('click', () => {
@@ -104,6 +145,7 @@ function buildCard(item) {
     card.classList.remove('dragging');
   });
 
+  renderQuickMarks();
   return card;
 }
 

@@ -17,6 +17,7 @@ input, select, button, textarea { width: 100%; margin-top: .25rem; border: 1px s
 button { background: var(--brand); color: white; border: none; cursor: pointer; }
 button:hover { opacity: .92; }
 button.danger, .delete { background: var(--danger); }
+.edit { background: #2b6cb0; }
 .controls { display: grid; gap: .5rem; margin-top: .8rem; }
 .itinerary { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: .8rem; align-items: start; }
 .day {
@@ -36,13 +37,24 @@ button.danger, .delete { background: var(--danger); }
   margin-bottom: .55rem;
 }
 .card-head { display: flex; justify-content: space-between; gap: .5rem; }
-.type { font-size: .75rem; background: #e5eef4; padding: .15rem .45rem; border-radius: 999px; }
+.type { font-size: .75rem; padding: .2rem .5rem; border-radius: 999px; color: #fff; font-weight: 600; }
+.type-naturaleza { background: #2f9e44; }
+.type-aventura { background: #1c7ed6; }
+.type-cultura { background: #9c36b5; }
+.type-gastronomia { background: #e67700; }
+.type-logistica { background: #495057; }
 .meta { margin: .45rem 0; font-size: .85rem; color: #445; }
+.quick-marks { display: flex; flex-wrap: wrap; gap: .3rem; margin-bottom: .5rem; }
+.quick-tag { font-size: .73rem; background: #edf2f7; border: 1px solid #d5dee8; border-radius: 999px; padding: .1rem .45rem; }
+.card-actions { display: flex; gap: .4rem; }
+.card-actions button { margin-top: 0; }
+.details { margin-top: .45rem; border-top: 1px dashed #d9e2ea; padding-top: .45rem; }
+.hidden { display: none; }
 .marks { display: grid; gap: .2rem; font-size: .8rem; margin-bottom: .4rem; }
 .marks label { display: flex; align-items: center; gap: .4rem; margin: 0; }
 .marks input { width: auto; margin: 0; }
 .notes { resize: vertical; min-height: 52px; }
-.delete { margin-top: .4rem; }
+.delete { margin-top: 0; }
 
 @media (max-width: 900px) {
   main { grid-template-columns: 1fr; }

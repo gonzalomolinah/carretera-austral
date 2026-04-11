@@ -60,15 +60,21 @@
         <span class="type"></span>
       </div>
       <p class="meta"></p>
-      <div class="marks">
-        <label><input type="checkbox" data-mark="must" /> Imprescindible</label>
-        <label><input type="checkbox" data-mark="booked" /> Reservado</label>
-        <label><input type="checkbox" data-mark="done" /> Completado</label>
-        <label><input type="checkbox" data-mark="lodging" /> Alojamiento</label>
-        <label><input type="checkbox" data-mark="dayvisit" /> Visita por el día</label>
+      <div class="quick-marks"></div>
+      <div class="card-actions">
+        <button class="edit">Editar</button>
+        <button class="delete">Eliminar</button>
       </div>
-      <textarea class="notes" rows="2" placeholder="Notas rápidas..."></textarea>
-      <button class="delete">Eliminar</button>
+      <div class="details hidden">
+        <div class="marks">
+          <label><input type="checkbox" data-mark="must" /> Imprescindible</label>
+          <label><input type="checkbox" data-mark="booked" /> Reservado</label>
+          <label><input type="checkbox" data-mark="done" /> Completado</label>
+          <label><input type="checkbox" data-mark="lodging" /> Alojamiento</label>
+          <label><input type="checkbox" data-mark="dayvisit" /> Visita por el día</label>
+        </div>
+        <textarea class="notes" rows="2" placeholder="Notas rápidas..."></textarea>
+      </div>
     </article>
   </template>
 
