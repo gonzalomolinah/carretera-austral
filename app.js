@@ -62,6 +62,9 @@ const itineraryEl = document.getElementById('itinerary');
 const daySelectEl = document.getElementById('daySelect');
 const form = document.getElementById('attractionForm');
 const cardTemplate = document.getElementById('cardTemplate');
+const statStopsEl = document.getElementById('statStops');
+const statHoursEl = document.getElementById('statHours');
+const statDoneEl = document.getElementById('statDone');
 
 function load() {
   const saved = localStorage.getItem(STORAGE_KEY);
@@ -174,6 +177,16 @@ function buildDayColumn(day) {
   return col;
 }
 
+function updateStats() {
+  const totalStops = state.items.length;
+  const totalHours = state.items.reduce((sum, item) => sum + Number(item.duration || 0), 0);
+  const doneCount = state.items.filter(item => item.marks?.done).length;
+
+  statStopsEl.textContent = `${totalStops} paradas`;
+  statHoursEl.textContent = `${totalHours}h estimadas`;
+  statDoneEl.textContent = `${doneCount} completadas`;
+}
+
 function render() {
   itineraryEl.innerHTML = '';
 
@@ -195,6 +208,7 @@ function render() {
   itineraryEl.appendChild(unassigned);
   state.days.forEach(day => itineraryEl.appendChild(buildDayColumn(day)));
   refreshDaySelect();
+  updateStats();
 }
 
 form.addEventListener('submit', (e) => {

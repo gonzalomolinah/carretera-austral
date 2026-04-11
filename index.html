@@ -7,9 +7,21 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header>
-    <h1>🛣️ Carretera Austral Planner</h1>
-    <p>Base recomendada: Puerto Montt (12 días). Planifica, ordena y marca tu ruta interactiva.</p>
+  <header class="hero">
+    <div class="hero-content">
+      <p class="eyebrow">Planificador de viaje</p>
+      <h1>🛣️ Carretera Austral Planner</h1>
+      <p>
+        Base recomendada: Puerto Montt (12 días). Organiza tus paradas, arrastra actividades entre días
+        y marca lo importante para no improvisar de más.
+      </p>
+      <div class="hero-badges">
+        <span>🌲 Naturaleza</span>
+        <span>🧗 Aventura</span>
+        <span>🏛️ Cultura</span>
+        <span>🛏️ Logística</span>
+      </div>
+    </div>
   </header>
 
   <main>
@@ -37,18 +49,25 @@
         <label>Día
           <select id="daySelect"></select>
         </label>
-        <button type="submit">Agregar</button>
+        <button type="submit">Agregar parada</button>
       </form>
 
       <div class="controls">
         <button id="addDayBtn">+ Agregar día</button>
         <button id="resetBtn" class="danger">Reiniciar demo</button>
       </div>
-      <small>Arrastra tarjetas entre días para mover lugares.</small>
+      <small>Tip: arrastra tarjetas entre días para redistribuir tu ruta.</small>
     </section>
 
     <section class="itinerary-wrapper">
-      <h2>Itinerario</h2>
+      <div class="itinerary-header">
+        <h2>Itinerario</h2>
+        <div class="stats" id="statsBar">
+          <span id="statStops">0 paradas</span>
+          <span id="statHours">0h</span>
+          <span id="statDone">0 completadas</span>
+        </div>
+      </div>
       <div id="itinerary" class="itinerary"></div>
     </section>
   </main>
