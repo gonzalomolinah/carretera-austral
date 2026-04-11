@@ -1,15 +1,41 @@
-const STORAGE_KEY = 'carretera-austral-planner-v1';
+const STORAGE_KEY = 'carretera-austral-planner-v2';
+
+const baseDays = Array.from({ length: 12 }, (_, i) => ({
+  id: crypto.randomUUID(),
+  name: `Día ${i + 1}`
+}));
+
+const dayId = (n) => baseDays[n - 1].id;
 
 const defaultData = {
-  days: [
-    { id: crypto.randomUUID(), name: 'Día 1' },
-    { id: crypto.randomUUID(), name: 'Día 2' },
-    { id: crypto.randomUUID(), name: 'Día 3' }
-  ],
+  days: baseDays,
   items: [
-    { id: crypto.randomUUID(), dayId: null, name: 'Capillas de Mármol', location: 'Puerto Río Tranquilo', type: 'Naturaleza', duration: 3, marks: { must: true, booked: false, done: false }, notes: '' },
-    { id: crypto.randomUUID(), dayId: null, name: 'Glaciar Exploradores', location: 'Bahía Exploradores', type: 'Aventura', duration: 8, marks: { must: true, booked: false, done: false }, notes: '' },
-    { id: crypto.randomUUID(), dayId: null, name: 'Barcaza Hornopirén-Caleta Gonzalo', location: 'Ruta Norte', type: 'Logística', duration: 5, marks: { must: true, booked: true, done: false }, notes: 'Reservar con anticipación.' }
+    { id: crypto.randomUUID(), dayId: dayId(1), name: 'Llegada a Puerto Montt + compra de provisiones', location: 'Puerto Montt', type: 'Logística', duration: 3, marks: { must: true, booked: false, done: false, lodging: true, dayvisit: false }, notes: 'Base sugerida para salida temprano al día siguiente.' },
+    { id: crypto.randomUUID(), dayId: dayId(2), name: 'Navegación Hornopirén → Caleta Gonzalo', location: 'Hornopirén / Caleta Gonzalo', type: 'Logística', duration: 5, marks: { must: true, booked: true, done: false, lodging: false, dayvisit: true }, notes: 'Reservar tramo bimodal con anticipación.' },
+    { id: crypto.randomUUID(), dayId: dayId(2), name: 'Parque Pumalín', location: 'Chaitén - Caleta Gonzalo', type: 'Naturaleza', duration: 4, marks: { must: true, booked: false, done: false, lodging: false, dayvisit: true }, notes: '' },
+
+    { id: crypto.randomUUID(), dayId: dayId(3), name: 'Ruta a Futaleufú / opción cruce a Esquel-Bariloche', location: 'Futaleufú', type: 'Aventura', duration: 6, marks: { must: false, booked: false, done: false, lodging: true, dayvisit: false }, notes: 'Opcional según clima y papeles para Argentina.' },
+
+    { id: crypto.randomUUID(), dayId: dayId(4), name: 'Raúl Marín Balmaceda / entorno Queulat', location: 'La Junta', type: 'Naturaleza', duration: 4, marks: { must: false, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
+    { id: crypto.randomUUID(), dayId: dayId(5), name: 'Isla Magdalena', location: 'Puerto Cisnes', type: 'Cultura', duration: 3, marks: { must: false, booked: false, done: false, lodging: false, dayvisit: true }, notes: '' },
+
+    { id: crypto.randomUUID(), dayId: dayId(6), name: 'Parque Queulat + Termas', location: 'Puyuhuapi', type: 'Naturaleza', duration: 6, marks: { must: true, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
+
+    { id: crypto.randomUUID(), dayId: dayId(7), name: 'Reserva Nacional Río Simpson', location: 'Coyhaique', type: 'Naturaleza', duration: 3, marks: { must: false, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
+    { id: crypto.randomUUID(), dayId: dayId(7), name: 'Capilla Redonda', location: 'Coyhaique', type: 'Cultura', duration: 1, marks: { must: false, booked: false, done: false, lodging: false, dayvisit: true }, notes: '' },
+
+    { id: crypto.randomUUID(), dayId: dayId(8), name: 'Capillas de Mármol', location: 'Puerto Río Tranquilo', type: 'Naturaleza', duration: 3, marks: { must: true, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
+    { id: crypto.randomUUID(), dayId: dayId(8), name: 'Laguna San Rafael (excursión larga)', location: 'Puerto Río Tranquilo', type: 'Aventura', duration: 12, marks: { must: false, booked: false, done: false, lodging: false, dayvisit: true }, notes: 'Alternativa: Glaciar Exploradores.' },
+
+    { id: crypto.randomUUID(), dayId: dayId(9), name: 'Río Baker + kayak/rafting', location: 'Puerto Bertrand', type: 'Aventura', duration: 4, marks: { must: false, booked: false, done: false, lodging: false, dayvisit: true }, notes: '' },
+    { id: crypto.randomUUID(), dayId: dayId(9), name: 'Campo de Hielo Norte / fósiles', location: 'Puerto Guadal', type: 'Naturaleza', duration: 4, marks: { must: false, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
+
+    { id: crypto.randomUUID(), dayId: dayId(10), name: 'Reserva Nacional Jeinimeni', location: 'Chile Chico', type: 'Naturaleza', duration: 5, marks: { must: false, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
+
+    { id: crypto.randomUUID(), dayId: dayId(11), name: 'Parque Patagonia + RN Tamango + Glaciar Calluqueo', location: 'Cochrane', type: 'Naturaleza', duration: 6, marks: { must: true, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
+
+    { id: crypto.randomUUID(), dayId: dayId(12), name: 'Pasarelas de Caleta Tortel + Isla de los Muertos', location: 'Caleta Tortel', type: 'Cultura', duration: 5, marks: { must: true, booked: false, done: false, lodging: false, dayvisit: true }, notes: '' },
+    { id: crypto.randomUUID(), dayId: dayId(12), name: 'Puerto Yungay / Cerro Santiago / conexión a Villa O’Higgins', location: 'Villa O’Higgins', type: 'Logística', duration: 5, marks: { must: false, booked: false, done: false, lodging: false, dayvisit: true }, notes: 'Usar como cierre o extensión de itinerario.' }
   ]
 };
 
@@ -49,7 +75,7 @@ function buildCard(item) {
 
   card.querySelectorAll('[data-mark]').forEach(cb => {
     const key = cb.dataset.mark;
-    cb.checked = item.marks[key];
+    cb.checked = Boolean(item.marks[key]);
     cb.addEventListener('change', () => {
       item.marks[key] = cb.checked;
       save();
@@ -102,10 +128,7 @@ function buildDayColumn(day) {
     render();
   });
 
-  state.items.filter(i => i.dayId === day.id).forEach(item => {
-    col.appendChild(buildCard(item));
-  });
-
+  state.items.filter(i => i.dayId === day.id).forEach(item => col.appendChild(buildCard(item)));
   return col;
 }
 
@@ -125,11 +148,10 @@ function render() {
     save();
     render();
   });
+
   state.items.filter(i => !i.dayId).forEach(item => unassigned.appendChild(buildCard(item)));
   itineraryEl.appendChild(unassigned);
-
   state.days.forEach(day => itineraryEl.appendChild(buildDayColumn(day)));
-
   refreshDaySelect();
 }
 
@@ -142,7 +164,7 @@ form.addEventListener('submit', (e) => {
     location: document.getElementById('location').value.trim(),
     type: document.getElementById('type').value,
     duration: Number(document.getElementById('duration').value || 1),
-    marks: { must: false, booked: false, done: false },
+    marks: { must: false, booked: false, done: false, lodging: false, dayvisit: false },
     notes: ''
   };
   state.items.push(item);
@@ -160,7 +182,7 @@ document.getElementById('addDayBtn').addEventListener('click', () => {
 });
 
 document.getElementById('resetBtn').addEventListener('click', () => {
-  if (!confirm('¿Seguro que quieres resetear el plan a datos de ejemplo?')) return;
+  if (!confirm('¿Seguro que quieres cargar la base recomendada de 12 días (Puerto Montt)?')) return;
   state = structuredClone(defaultData);
   save();
   render();

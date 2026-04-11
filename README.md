@@ -2,6 +2,8 @@
 
 Planificador interactivo (HTML/CSS/JS) para organizar un viaje por la Carretera Austral.
 
+Base inicial incluida: itinerario referencial de **12 días partiendo desde Puerto Montt** (PMC).
+
 ## Funciones
 
 - Agregar atracciones/paradas personalizadas
