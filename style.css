@@ -241,6 +241,30 @@ small {
   box-shadow: 0 10px 18px rgba(15, 23, 42, 0.1);
 }
 
+.card-transport {
+  padding: 0.45rem 0.6rem;
+  border-left: 4px solid #0f766e;
+}
+
+.card-ferry {
+  border-left-color: #1d4ed8;
+}
+
+.card-transport .card-head {
+  align-items: center;
+}
+
+.card-transport .title {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.card-transport .meta {
+  margin: 0.2rem 0 0.35rem;
+  font-size: 0.78rem;
+  color: #0f4f75;
+}
+
 .card.dragging {
   opacity: 0.7;
   transform: rotate(1deg) scale(0.99);
@@ -284,6 +308,14 @@ small {
 
 .type-logistica {
   background: #495057;
+}
+
+.type-traslado {
+  background: #0f766e;
+}
+
+.type-ferry {
+  background: #1d4ed8;
 }
 
 .meta {

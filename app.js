@@ -47,7 +47,9 @@ const typeStyles = {
   'Aventura': { cls: 'type-aventura', label: '🧗 Aventura' },
   'Cultura': { cls: 'type-cultura', label: '🏛️ Cultura' },
   'Gastronomía': { cls: 'type-gastronomia', label: '🍲 Gastronomía' },
-  'Logística': { cls: 'type-logistica', label: '🛳️ Logística' }
+  'Logística': { cls: 'type-logistica', label: '🛳️ Logística' },
+  'Traslado': { cls: 'type-traslado', label: '🚐 Traslado' },
+  'Ferry': { cls: 'type-ferry', label: '⛴️ Ferry' }
 };
 
 const markLabels = {
@@ -89,16 +91,27 @@ function refreshDaySelect() {
 function buildCard(item) {
   const card = cardTemplate.content.firstElementChild.cloneNode(true);
   card.dataset.id = item.id;
-  card.querySelector('.title').textContent = item.name;
+
+  const isTransport = item.type === 'Traslado' || item.type === 'Ferry';
+  const titleEl = card.querySelector('.title');
+  const metaEl = card.querySelector('.meta');
+  const quickMarksEl = card.querySelector('.quick-marks');
+
+  if (isTransport) {
+    card.classList.add('card-transport');
+    if (item.type === 'Ferry') card.classList.add('card-ferry');
+    titleEl.textContent = item.location || item.name || 'Inicio - Destino';
+    metaEl.textContent = `⏱ ${item.duration}h total`;
+  } else {
+    titleEl.textContent = item.name;
+    metaEl.textContent = `${item.location} · ${item.duration}h`;
+  }
 
   const typeEl = card.querySelector('.type');
   const typeInfo = typeStyles[item.type] || { cls: 'type-logistica', label: item.type };
   typeEl.textContent = typeInfo.label;
   typeEl.classList.add(typeInfo.cls);
 
-  card.querySelector('.meta').textContent = `${item.location} · ${item.duration}h`;
-
-  const quickMarksEl = card.querySelector('.quick-marks');
   const renderQuickMarks = () => {
     quickMarksEl.innerHTML = '';
     Object.entries(markLabels).forEach(([key, label]) => {
@@ -108,6 +121,11 @@ function buildCard(item) {
       tag.textContent = label;
       quickMarksEl.appendChild(tag);
     });
+    if (isTransport && quickMarksEl.childElementCount === 0) {
+      quickMarksEl.classList.add('hidden');
+    } else {
+      quickMarksEl.classList.remove('hidden');
+    }
   };
 
   card.querySelectorAll('[data-mark]').forEach(cb => {
