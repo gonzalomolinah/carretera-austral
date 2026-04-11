@@ -59,6 +59,7 @@ const markLabels = {
 };
 
 const itineraryEl = document.getElementById('itinerary');
+const unassignedEl = document.getElementById('unassigned');
 const daySelectEl = document.getElementById('daySelect');
 const form = document.getElementById('attractionForm');
 const cardTemplate = document.getElementById('cardTemplate');
@@ -189,23 +190,20 @@ function updateStats() {
 
 function render() {
   itineraryEl.innerHTML = '';
+  unassignedEl.innerHTML = '';
 
-  const unassigned = document.createElement('section');
-  unassigned.className = 'day';
-  unassigned.innerHTML = '<h3>Sin asignar</h3>';
-  unassigned.addEventListener('dragover', (e) => { e.preventDefault(); unassigned.classList.add('drag-over'); });
-  unassigned.addEventListener('dragleave', () => unassigned.classList.remove('drag-over'));
-  unassigned.addEventListener('drop', () => {
-    unassigned.classList.remove('drag-over');
+  unassignedEl.ondragover = (e) => { e.preventDefault(); unassignedEl.classList.add('drag-over'); };
+  unassignedEl.ondragleave = () => unassignedEl.classList.remove('drag-over');
+  unassignedEl.ondrop = () => {
+    unassignedEl.classList.remove('drag-over');
     const it = state.items.find(x => x.id === draggedId);
     if (!it) return;
     it.dayId = null;
     save();
     render();
-  });
+  };
 
-  state.items.filter(i => !i.dayId).forEach(item => unassigned.appendChild(buildCard(item)));
-  itineraryEl.appendChild(unassigned);
+  state.items.filter(i => !i.dayId).forEach(item => unassignedEl.appendChild(buildCard(item)));
   state.days.forEach(day => itineraryEl.appendChild(buildDayColumn(day)));
   refreshDaySelect();
   updateStats();
