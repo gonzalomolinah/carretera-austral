@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Carretera Austral Planner</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>🛣️ Carretera Austral Planner</h1>
+    <p>Planifica, ordena y marca tu ruta interactiva.</p>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>Nueva atracción / parada</h2>
+      <form id="attractionForm">
+        <label>Nombre
+          <input id="name" required placeholder="Ej: Capillas de Mármol" />
+        </label>
+        <label>Lugar
+          <input id="location" required placeholder="Ej: Puerto Río Tranquilo" />
+        </label>
+        <label>Tipo
+          <select id="type">
+            <option value="Naturaleza">Naturaleza</option>
+            <option value="Aventura">Aventura</option>
+            <option value="Cultura">Cultura</option>
+            <option value="Gastronomía">Gastronomía</option>
+            <option value="Logística">Logística</option>
+          </select>
+        </label>
+        <label>Duración (horas)
+          <input id="duration" type="number" min="1" max="24" value="2" />
+        </label>
+        <label>Día
+          <select id="daySelect"></select>
+        </label>
+        <button type="submit">Agregar</button>
+      </form>
+
+      <div class="controls">
+        <button id="addDayBtn">+ Agregar día</button>
+        <button id="resetBtn" class="danger">Reiniciar demo</button>
+      </div>
+      <small>Arrastra tarjetas entre días para mover lugares.</small>
+    </section>
+
+    <section class="itinerary-wrapper">
+      <h2>Itinerario</h2>
+      <div id="itinerary" class="itinerary"></div>
+    </section>
+  </main>
+
+  <template id="cardTemplate">
+    <article class="card" draggable="true">
+      <div class="card-head">
+        <strong class="title"></strong>
+        <span class="type"></span>
+      </div>
+      <p class="meta"></p>
+      <div class="marks">
+        <label><input type="checkbox" data-mark="must" /> Imprescindible</label>
+        <label><input type="checkbox" data-mark="booked" /> Reservado</label>
+        <label><input type="checkbox" data-mark="done" /> Completado</label>
+      </div>
+      <textarea class="notes" rows="2" placeholder="Notas rápidas..."></textarea>
+      <button class="delete">Eliminar</button>
+    </article>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
