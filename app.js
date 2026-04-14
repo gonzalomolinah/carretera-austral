@@ -44,6 +44,13 @@ const defaultData = {
   items: defaultItems
 };
 
+function createEmptyPlanData() {
+  return {
+    days: structuredClone(defaultDays),
+    items: []
+  };
+}
+
 let state = structuredClone(defaultData);
 let draggedId = null;
 let supabaseClient = null;
@@ -286,7 +293,7 @@ function writeLocalStore(store) {
 function getLocalPlanState(planKey) {
   const store = readLocalStore();
   const planState = store.plans[planKey];
-  return planState ? sanitizeState(planState) : structuredClone(defaultData);
+  return planState ? sanitizeState(planState) : createEmptyPlanData();
 }
 
 function persistLocalPlanState(planKey, planState) {
@@ -406,8 +413,9 @@ async function loadRemoteState(planKey) {
   if (error) throw error;
   if (data?.state_json) return sanitizeState(data.state_json);
 
-  await saveRemoteState(planKey, structuredClone(defaultData));
-  return structuredClone(defaultData);
+  const emptyPlan = createEmptyPlanData();
+  await saveRemoteState(planKey, emptyPlan);
+  return emptyPlan;
 }
 
 async function saveRemoteState(planKey, nextState) {
@@ -856,7 +864,7 @@ async function init() {
     await switchToPlan(currentPlanKey, { force: true });
   } catch (error) {
     console.error('Error inicializando planificación:', error.message);
-    state = structuredClone(defaultData);
+    state = createEmptyPlanData();
     normalizeState();
     render();
     updateSyncStatus('No se pudo cargar la planificación inicial.', 'error');
