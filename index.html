@@ -55,9 +55,13 @@
       </form>
 
       <div class="controls">
+        <button id="saveBtn" type="button">Guardar planificación</button>
         <button id="addDayBtn">+ Agregar día</button>
         <button id="resetBtn" class="danger">Reiniciar demo</button>
       </div>
+      <p id="syncStatus" class="sync-status" role="status" aria-live="polite">
+        Cargando planificación...
+      </p>
       <small>Tip: arrastra tarjetas entre días para redistribuir tu ruta.</small>
 
       <div class="unassigned-panel">

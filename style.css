@@ -177,6 +177,41 @@ button.danger,
   margin-top: 0.8rem;
 }
 
+.sync-status {
+  margin: 0.55rem 0 0.35rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 10px;
+  border: 1px solid #cfe2f5;
+  background: #eef6ff;
+  color: #0f4f75;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.sync-status[data-level='saving'] {
+  border-color: #8ec7ff;
+  background: #e7f3ff;
+  color: #0e4a73;
+}
+
+.sync-status[data-level='saved'] {
+  border-color: #99dfaf;
+  background: #e8f8ee;
+  color: #1f6e3a;
+}
+
+.sync-status[data-level='error'] {
+  border-color: #f3b2b9;
+  background: #fff1f2;
+  color: #9f2230;
+}
+
+.sync-status[data-level='local'] {
+  border-color: #d3dae3;
+  background: #f4f6f8;
+  color: #4b5f74;
+}
+
 small {
   color: var(--muted);
 }

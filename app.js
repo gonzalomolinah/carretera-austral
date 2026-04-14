@@ -4,43 +4,34 @@ const SUPABASE_ANON_KEY = 'sb_publishable_v_qzelV5YofpbQWaxf4wIw_mhKt-WOh';
 const SUPABASE_TABLE = 'planner_state';
 const SUPABASE_PLAN_ID = 'carretera-austral-public';
 
-const baseDays = Array.from({ length: 12 }, (_, i) => ({
-  id: crypto.randomUUID(),
+const defaultDays = Array.from({ length: 12 }, (_, i) => ({
+  id: `day-${i + 1}`,
   name: `Día ${i + 1}`
 }));
 
-const dayId = (n) => baseDays[n - 1].id;
+const defaultItems = [
+  { id: 'item-1', dayId: 'day-1', order: 0, name: 'Llegada a Puerto Montt + compra de provisiones', location: 'Puerto Montt', type: 'Logística', duration: 3, marks: { must: true, booked: false, done: false, lodging: true, dayvisit: false }, notes: 'Base sugerida para salida temprano al día siguiente.' },
+  { id: 'item-2', dayId: 'day-2', order: 0, name: 'Navegación Hornopirén → Caleta Gonzalo', location: 'Hornopirén / Caleta Gonzalo', type: 'Logística', duration: 5, marks: { must: true, booked: true, done: false, lodging: false, dayvisit: true }, notes: 'Reservar tramo bimodal con anticipación.' },
+  { id: 'item-3', dayId: 'day-2', order: 1, name: 'Parque Pumalín', location: 'Chaitén - Caleta Gonzalo', type: 'Naturaleza', duration: 4, marks: { must: true, booked: false, done: false, lodging: false, dayvisit: true }, notes: '' },
+  { id: 'item-4', dayId: 'day-3', order: 0, name: 'Ruta a Futaleufú / opción cruce a Esquel-Bariloche', location: 'Futaleufú', type: 'Aventura', duration: 6, marks: { must: false, booked: false, done: false, lodging: true, dayvisit: false }, notes: 'Opcional según clima y papeles para Argentina.' },
+  { id: 'item-5', dayId: 'day-4', order: 0, name: 'Raúl Marín Balmaceda / entorno Queulat', location: 'La Junta', type: 'Naturaleza', duration: 4, marks: { must: false, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
+  { id: 'item-6', dayId: 'day-5', order: 0, name: 'Isla Magdalena', location: 'Puerto Cisnes', type: 'Cultura', duration: 3, marks: { must: false, booked: false, done: false, lodging: false, dayvisit: true }, notes: '' },
+  { id: 'item-7', dayId: 'day-6', order: 0, name: 'Parque Queulat + Termas', location: 'Puyuhuapi', type: 'Naturaleza', duration: 6, marks: { must: true, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
+  { id: 'item-8', dayId: 'day-7', order: 0, name: 'Reserva Nacional Río Simpson', location: 'Coyhaique', type: 'Naturaleza', duration: 3, marks: { must: false, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
+  { id: 'item-9', dayId: 'day-7', order: 1, name: 'Capilla Redonda', location: 'Coyhaique', type: 'Cultura', duration: 1, marks: { must: false, booked: false, done: false, lodging: false, dayvisit: true }, notes: '' },
+  { id: 'item-10', dayId: 'day-8', order: 0, name: 'Capillas de Mármol', location: 'Puerto Río Tranquilo', type: 'Naturaleza', duration: 3, marks: { must: true, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
+  { id: 'item-11', dayId: 'day-8', order: 1, name: 'Laguna San Rafael (excursión larga)', location: 'Puerto Río Tranquilo', type: 'Aventura', duration: 12, marks: { must: false, booked: false, done: false, lodging: false, dayvisit: true }, notes: 'Alternativa: Glaciar Exploradores.' },
+  { id: 'item-12', dayId: 'day-9', order: 0, name: 'Río Baker + kayak/rafting', location: 'Puerto Bertrand', type: 'Aventura', duration: 4, marks: { must: false, booked: false, done: false, lodging: false, dayvisit: true }, notes: '' },
+  { id: 'item-13', dayId: 'day-9', order: 1, name: 'Campo de Hielo Norte / fósiles', location: 'Puerto Guadal', type: 'Naturaleza', duration: 4, marks: { must: false, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
+  { id: 'item-14', dayId: 'day-10', order: 0, name: 'Reserva Nacional Jeinimeni', location: 'Chile Chico', type: 'Naturaleza', duration: 5, marks: { must: false, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
+  { id: 'item-15', dayId: 'day-11', order: 0, name: 'Parque Patagonia + RN Tamango + Glaciar Calluqueo', location: 'Cochrane', type: 'Naturaleza', duration: 6, marks: { must: true, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
+  { id: 'item-16', dayId: 'day-12', order: 0, name: 'Pasarelas de Caleta Tortel + Isla de los Muertos', location: 'Caleta Tortel', type: 'Cultura', duration: 5, marks: { must: true, booked: false, done: false, lodging: false, dayvisit: true }, notes: '' },
+  { id: 'item-17', dayId: 'day-12', order: 1, name: 'Puerto Yungay / Cerro Santiago / conexión a Villa O\'Higgins', location: 'Villa O\'Higgins', type: 'Logística', duration: 5, marks: { must: false, booked: false, done: false, lodging: false, dayvisit: true }, notes: 'Usar como cierre o extensión de itinerario.' }
+];
 
 const defaultData = {
-  days: baseDays,
-  items: [
-    { id: crypto.randomUUID(), dayId: dayId(1), name: 'Llegada a Puerto Montt + compra de provisiones', location: 'Puerto Montt', type: 'Logística', duration: 3, marks: { must: true, booked: false, done: false, lodging: true, dayvisit: false }, notes: 'Base sugerida para salida temprano al día siguiente.' },
-    { id: crypto.randomUUID(), dayId: dayId(2), name: 'Navegación Hornopirén → Caleta Gonzalo', location: 'Hornopirén / Caleta Gonzalo', type: 'Logística', duration: 5, marks: { must: true, booked: true, done: false, lodging: false, dayvisit: true }, notes: 'Reservar tramo bimodal con anticipación.' },
-    { id: crypto.randomUUID(), dayId: dayId(2), name: 'Parque Pumalín', location: 'Chaitén - Caleta Gonzalo', type: 'Naturaleza', duration: 4, marks: { must: true, booked: false, done: false, lodging: false, dayvisit: true }, notes: '' },
-
-    { id: crypto.randomUUID(), dayId: dayId(3), name: 'Ruta a Futaleufú / opción cruce a Esquel-Bariloche', location: 'Futaleufú', type: 'Aventura', duration: 6, marks: { must: false, booked: false, done: false, lodging: true, dayvisit: false }, notes: 'Opcional según clima y papeles para Argentina.' },
-
-    { id: crypto.randomUUID(), dayId: dayId(4), name: 'Raúl Marín Balmaceda / entorno Queulat', location: 'La Junta', type: 'Naturaleza', duration: 4, marks: { must: false, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
-    { id: crypto.randomUUID(), dayId: dayId(5), name: 'Isla Magdalena', location: 'Puerto Cisnes', type: 'Cultura', duration: 3, marks: { must: false, booked: false, done: false, lodging: false, dayvisit: true }, notes: '' },
-
-    { id: crypto.randomUUID(), dayId: dayId(6), name: 'Parque Queulat + Termas', location: 'Puyuhuapi', type: 'Naturaleza', duration: 6, marks: { must: true, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
-
-    { id: crypto.randomUUID(), dayId: dayId(7), name: 'Reserva Nacional Río Simpson', location: 'Coyhaique', type: 'Naturaleza', duration: 3, marks: { must: false, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
-    { id: crypto.randomUUID(), dayId: dayId(7), name: 'Capilla Redonda', location: 'Coyhaique', type: 'Cultura', duration: 1, marks: { must: false, booked: false, done: false, lodging: false, dayvisit: true }, notes: '' },
-
-    { id: crypto.randomUUID(), dayId: dayId(8), name: 'Capillas de Mármol', location: 'Puerto Río Tranquilo', type: 'Naturaleza', duration: 3, marks: { must: true, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
-    { id: crypto.randomUUID(), dayId: dayId(8), name: 'Laguna San Rafael (excursión larga)', location: 'Puerto Río Tranquilo', type: 'Aventura', duration: 12, marks: { must: false, booked: false, done: false, lodging: false, dayvisit: true }, notes: 'Alternativa: Glaciar Exploradores.' },
-
-    { id: crypto.randomUUID(), dayId: dayId(9), name: 'Río Baker + kayak/rafting', location: 'Puerto Bertrand', type: 'Aventura', duration: 4, marks: { must: false, booked: false, done: false, lodging: false, dayvisit: true }, notes: '' },
-    { id: crypto.randomUUID(), dayId: dayId(9), name: 'Campo de Hielo Norte / fósiles', location: 'Puerto Guadal', type: 'Naturaleza', duration: 4, marks: { must: false, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
-
-    { id: crypto.randomUUID(), dayId: dayId(10), name: 'Reserva Nacional Jeinimeni', location: 'Chile Chico', type: 'Naturaleza', duration: 5, marks: { must: false, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
-
-    { id: crypto.randomUUID(), dayId: dayId(11), name: 'Parque Patagonia + RN Tamango + Glaciar Calluqueo', location: 'Cochrane', type: 'Naturaleza', duration: 6, marks: { must: true, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
-
-    { id: crypto.randomUUID(), dayId: dayId(12), name: 'Pasarelas de Caleta Tortel + Isla de los Muertos', location: 'Caleta Tortel', type: 'Cultura', duration: 5, marks: { must: true, booked: false, done: false, lodging: false, dayvisit: true }, notes: '' },
-    { id: crypto.randomUUID(), dayId: dayId(12), name: 'Puerto Yungay / Cerro Santiago / conexión a Villa O’Higgins', location: 'Villa O’Higgins', type: 'Logística', duration: 5, marks: { must: false, booked: false, done: false, lodging: false, dayvisit: true }, notes: 'Usar como cierre o extensión de itinerario.' }
-  ]
+  days: defaultDays,
+  items: defaultItems
 };
 
 let state = structuredClone(defaultData);
@@ -75,6 +66,25 @@ const cardTemplate = document.getElementById('cardTemplate');
 const statStopsEl = document.getElementById('statStops');
 const statHoursEl = document.getElementById('statHours');
 const statDoneEl = document.getElementById('statDone');
+const saveBtn = document.getElementById('saveBtn');
+const syncStatusEl = document.getElementById('syncStatus');
+const syncTimeFormatter = new Intl.DateTimeFormat('es-CL', {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit'
+});
+
+function updateSyncStatus(message, level = 'local') {
+  if (!syncStatusEl) return;
+  syncStatusEl.textContent = message;
+  syncStatusEl.dataset.level = level;
+}
+
+function setSaveButtonBusy(isBusy) {
+  if (!saveBtn) return;
+  saveBtn.disabled = isBusy;
+  saveBtn.textContent = isBusy ? 'Guardando...' : 'Guardar planificación';
+}
 
 function loadLocal() {
   const saved = localStorage.getItem(STORAGE_KEY);
@@ -142,10 +152,24 @@ function moveItemToDay(itemId, targetDayId) {
   normalizeState();
 }
 
-function save() {
+function save(options = {}) {
+  const immediateRemote = Boolean(options.immediateRemote);
   normalizeState();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  queueRemoteSave();
+
+  if (!supabaseClient) {
+    updateSyncStatus('Guardado local. Configura Supabase para compartir cambios.', 'local');
+    return Promise.resolve();
+  }
+
+  if (immediateRemote) {
+    return queueRemoteSave({ immediate: true });
+  }
+
+  updateSyncStatus('Cambios detectados. Guardando en la base...', 'saving');
+  return queueRemoteSave({ immediate: false }).catch((error) => {
+    console.error('Error en cola de guardado:', error.message);
+  });
 }
 
 function canUseSupabase() {
@@ -185,20 +209,50 @@ async function saveRemoteState(nextState) {
     .upsert(payload, { onConflict: 'id' });
 
   if (error) {
-    console.error('Error guardando en Supabase:', error.message);
+    throw error;
   }
 }
 
-function queueRemoteSave() {
-  if (!supabaseClient) return;
-  if (saveTimer) clearTimeout(saveTimer);
+async function runRemoteSave(snapshot) {
+  setSaveButtonBusy(true);
+  updateSyncStatus('Guardando en la base...', 'saving');
+  try {
+    await saveRemoteState(snapshot);
+    const syncTime = syncTimeFormatter.format(new Date());
+    updateSyncStatus(`Guardado en la base a las ${syncTime}`, 'saved');
+  } catch (error) {
+    updateSyncStatus('No se pudo guardar en la base de datos.', 'error');
+    throw error;
+  } finally {
+    setSaveButtonBusy(false);
+  }
+}
 
-  saveTimer = setTimeout(() => {
+function queueRemoteSave({ immediate = false } = {}) {
+  if (!supabaseClient) return;
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+
+  const enqueue = () => {
     const snapshot = structuredClone(state);
     pendingRemoteSave = pendingRemoteSave
-      .then(() => saveRemoteState(snapshot))
-      .catch((err) => console.error('Error de cola Supabase:', err));
-  }, 450);
+      .catch(() => undefined)
+      .then(() => runRemoteSave(snapshot));
+    return pendingRemoteSave;
+  };
+
+  if (immediate) {
+    return enqueue();
+  }
+
+  return new Promise((resolve, reject) => {
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      enqueue().then(resolve).catch(reject);
+    }, 450);
+  });
 }
 
 function refreshDaySelect() {
@@ -367,6 +421,16 @@ form.addEventListener('submit', (e) => {
   render();
 });
 
+if (saveBtn) {
+  saveBtn.addEventListener('click', async () => {
+    try {
+      await save({ immediateRemote: true });
+    } catch (error) {
+      console.error('Error guardando manualmente:', error.message);
+    }
+  });
+}
+
 document.getElementById('addDayBtn').addEventListener('click', () => {
   const next = state.days.length + 1;
   state.days.push({ id: crypto.randomUUID(), name: `Día ${next}` });
@@ -387,12 +451,19 @@ async function init() {
   if (supabaseClient) {
     try {
       state = await loadRemoteState();
+      updateSyncStatus('Planificación cargada desde la base de datos.', 'saved');
     } catch (error) {
       console.error('No se pudo cargar Supabase, usando localStorage:', error.message);
       state = loadLocal();
+      updateSyncStatus('No se pudo leer Supabase. Usando datos locales.', 'error');
     }
   } else {
     state = loadLocal();
+    updateSyncStatus('Modo local activo (Supabase no configurado).', 'local');
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Guardar (solo local)';
+    }
   }
 
   normalizeState();
