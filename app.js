@@ -81,7 +81,69 @@ function loadLocal() {
   return saved ? JSON.parse(saved) : structuredClone(defaultData);
 }
 
+function getOrderKey(dayValue) {
+  return dayValue || '__unassigned__';
+}
+
+function getItemsForDay(dayValue) {
+  return state.items
+    .filter((item) => (item.dayId || null) === (dayValue || null))
+    .sort((a, b) => {
+      const aOrder = Number.isFinite(a.order) ? a.order : Number.MAX_SAFE_INTEGER;
+      const bOrder = Number.isFinite(b.order) ? b.order : Number.MAX_SAFE_INTEGER;
+      return aOrder - bOrder;
+    });
+}
+
+function getNextOrderForDay(dayValue, excludedId = null) {
+  let maxOrder = -1;
+  state.items.forEach((item) => {
+    if ((item.dayId || null) !== (dayValue || null)) return;
+    if (excludedId && item.id === excludedId) return;
+    const itemOrder = Number.isFinite(item.order) ? item.order : -1;
+    if (itemOrder > maxOrder) maxOrder = itemOrder;
+  });
+  return maxOrder + 1;
+}
+
+function normalizeState() {
+  const groups = new Map();
+
+  state.items.forEach((item, index) => {
+    if (!item.marks) {
+      item.marks = { must: false, booked: false, done: false, lodging: false, dayvisit: false };
+    }
+    if (typeof item.notes !== 'string') item.notes = '';
+
+    const key = getOrderKey(item.dayId);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({ item, index });
+  });
+
+  groups.forEach((entries) => {
+    entries.sort((a, b) => {
+      const aOrder = Number.isFinite(a.item.order) ? a.item.order : Number.MAX_SAFE_INTEGER;
+      const bOrder = Number.isFinite(b.item.order) ? b.item.order : Number.MAX_SAFE_INTEGER;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return a.index - b.index;
+    });
+
+    entries.forEach((entry, idx) => {
+      entry.item.order = idx;
+    });
+  });
+}
+
+function moveItemToDay(itemId, targetDayId) {
+  const it = state.items.find((x) => x.id === itemId);
+  if (!it) return;
+  it.dayId = targetDayId;
+  it.order = getNextOrderForDay(targetDayId, itemId);
+  normalizeState();
+}
+
 function save() {
+  normalizeState();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   queueRemoteSave();
 }
@@ -246,14 +308,12 @@ function buildDayColumn(day) {
   col.addEventListener('drop', () => {
     col.classList.remove('drag-over');
     if (!draggedId) return;
-    const it = state.items.find(x => x.id === draggedId);
-    if (!it) return;
-    it.dayId = day.id;
+    moveItemToDay(draggedId, day.id);
     save();
     render();
   });
 
-  state.items.filter(i => i.dayId === day.id).forEach(item => col.appendChild(buildCard(item)));
+  getItemsForDay(day.id).forEach(item => col.appendChild(buildCard(item)));
   return col;
 }
 
@@ -275,14 +335,13 @@ function render() {
   unassignedEl.ondragleave = () => unassignedEl.classList.remove('drag-over');
   unassignedEl.ondrop = () => {
     unassignedEl.classList.remove('drag-over');
-    const it = state.items.find(x => x.id === draggedId);
-    if (!it) return;
-    it.dayId = null;
+    if (!draggedId) return;
+    moveItemToDay(draggedId, null);
     save();
     render();
   };
 
-  state.items.filter(i => !i.dayId).forEach(item => unassignedEl.appendChild(buildCard(item)));
+  getItemsForDay(null).forEach(item => unassignedEl.appendChild(buildCard(item)));
   state.days.forEach(day => itineraryEl.appendChild(buildDayColumn(day)));
   refreshDaySelect();
   updateStats();
@@ -293,6 +352,7 @@ form.addEventListener('submit', (e) => {
   const item = {
     id: crypto.randomUUID(),
     dayId: daySelectEl.value || null,
+    order: getNextOrderForDay(daySelectEl.value || null),
     name: document.getElementById('name').value.trim(),
     location: document.getElementById('location').value.trim(),
     type: document.getElementById('type').value,
@@ -335,6 +395,7 @@ async function init() {
     state = loadLocal();
   }
 
+  normalizeState();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   render();
 }
