@@ -431,6 +431,28 @@ small {
   animation: fadeIn 0.18s ease;
 }
 
+.move-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.42rem;
+  align-items: end;
+  margin-bottom: 0.45rem;
+}
+
+.move-row label {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #334155;
+}
+
+.move-row .move-apply {
+  width: auto;
+  padding: 0.58rem 0.82rem;
+  margin-top: 0.26rem;
+  background: linear-gradient(120deg, #246d9c, #1e5a80);
+  white-space: nowrap;
+}
+
 .hidden {
   display: none;
 }
@@ -532,5 +554,13 @@ small {
 
   .hero-badges span {
     font-size: 0.76rem;
+  }
+
+  .move-row {
+    grid-template-columns: 1fr;
+  }
+
+  .move-row .move-apply {
+    width: 100%;
   }
 }

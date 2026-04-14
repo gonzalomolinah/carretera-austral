@@ -530,6 +530,11 @@ function refreshDaySelect() {
 function buildCard(item) {
   const card = cardTemplate.content.firstElementChild.cloneNode(true);
   card.dataset.id = item.id;
+  const isCoarsePointer = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+
+  if (isCoarsePointer) {
+    card.draggable = false;
+  }
 
   const isTransport = item.type === 'Traslado' || item.type === 'Ferry';
   const titleEl = card.querySelector('.title');
@@ -586,7 +591,27 @@ function buildCard(item) {
   });
 
   const details = card.querySelector('.details');
+  const moveDaySelect = card.querySelector('.move-day');
+  const moveApplyBtn = card.querySelector('.move-apply');
   const editBtn = card.querySelector('.edit');
+
+  moveDaySelect.innerHTML = '<option value="">Sin asignar</option>';
+  state.days.forEach((day) => {
+    const opt = document.createElement('option');
+    opt.value = day.id;
+    opt.textContent = day.name;
+    moveDaySelect.appendChild(opt);
+  });
+  moveDaySelect.value = item.dayId || '';
+
+  moveApplyBtn.addEventListener('click', () => {
+    const targetDayId = moveDaySelect.value || null;
+    const currentDayId = item.dayId || null;
+    if (targetDayId === currentDayId) return;
+    moveItemToDay(item.id, targetDayId);
+    render();
+  });
+
   editBtn.addEventListener('click', () => {
     details.classList.toggle('hidden');
     editBtn.textContent = details.classList.contains('hidden') ? 'Editar' : 'Cerrar';
