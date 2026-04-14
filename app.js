@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'carretera-austral-planner-v2';
-const SUPABASE_URL = 'PEGA_AQUI_TU_SUPABASE_URL';
-const SUPABASE_ANON_KEY = 'PEGA_AQUI_TU_SUPABASE_ANON_KEY';
+const SUPABASE_URL = 'https://cioggccobgnglprrvfpk.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_v_qzelV5YofpbQWaxf4wIw_mhKt-WOh';
 const SUPABASE_TABLE = 'planner_state';
 const SUPABASE_PLAN_ID = 'carretera-austral-public';
 
