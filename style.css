@@ -141,6 +141,12 @@ textarea {
   transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.12s ease;
 }
 
+.field-grid {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: 1fr 1fr;
+}
+
 input:focus,
 select:focus,
 textarea:focus {
@@ -177,6 +183,27 @@ button.danger,
   margin-top: 0.8rem;
 }
 
+.controls-main {
+  grid-template-columns: 1fr;
+}
+
+.controls-io {
+  grid-template-columns: 1fr 1fr;
+  margin-top: 0.55rem;
+}
+
+.controls-io button {
+  background: linear-gradient(120deg, #3b556d, #2f4457);
+}
+
+.hidden-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .sync-status {
   margin: 0.55rem 0 0.35rem;
   padding: 0.4rem 0.55rem;
@@ -210,6 +237,12 @@ button.danger,
   border-color: #d3dae3;
   background: #f4f6f8;
   color: #4b5f74;
+}
+
+.sync-status[data-level='pending'] {
+  border-color: #f0d48a;
+  background: #fff8df;
+  color: #7e5d15;
 }
 
 small {
@@ -437,9 +470,59 @@ small {
 @media (max-width: 900px) {
   main {
     grid-template-columns: 1fr;
+    gap: 0.8rem;
+    padding: 0.7rem;
   }
 
   .hero {
     border-radius: 0;
+    padding: 1rem 0.9rem 1.2rem;
+  }
+
+  .panel,
+  .itinerary-wrapper {
+    padding: 0.82rem;
+    border-radius: 14px;
+  }
+
+  .itinerary {
+    grid-template-columns: 1fr;
+    gap: 0.7rem;
+  }
+
+  .day {
+    min-height: 170px;
+  }
+
+  .card-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .field-grid {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  button,
+  input,
+  select,
+  textarea {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .controls-io {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-badges {
+    gap: 0.35rem;
+  }
+
+  .hero-badges span {
+    font-size: 0.76rem;
   }
 }

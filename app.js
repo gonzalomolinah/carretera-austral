@@ -11,7 +11,7 @@ const defaultDays = Array.from({ length: 12 }, (_, i) => ({
 
 const defaultItems = [
   { id: 'item-1', dayId: 'day-1', order: 0, name: 'Llegada a Puerto Montt + compra de provisiones', location: 'Puerto Montt', type: 'Logística', duration: 3, marks: { must: true, booked: false, done: false, lodging: true, dayvisit: false }, notes: 'Base sugerida para salida temprano al día siguiente.' },
-  { id: 'item-2', dayId: 'day-2', order: 0, name: 'Navegación Hornopirén → Caleta Gonzalo', location: 'Hornopirén / Caleta Gonzalo', type: 'Logística', duration: 5, marks: { must: true, booked: true, done: false, lodging: false, dayvisit: true }, notes: 'Reservar tramo bimodal con anticipación.' },
+  { id: 'item-2', dayId: 'day-2', order: 0, name: 'Navegación Hornopirén -> Caleta Gonzalo', location: 'Hornopirén / Caleta Gonzalo', type: 'Logística', duration: 5, marks: { must: true, booked: true, done: false, lodging: false, dayvisit: true }, notes: 'Reservar tramo bimodal con anticipación.' },
   { id: 'item-3', dayId: 'day-2', order: 1, name: 'Parque Pumalín', location: 'Chaitén - Caleta Gonzalo', type: 'Naturaleza', duration: 4, marks: { must: true, booked: false, done: false, lodging: false, dayvisit: true }, notes: '' },
   { id: 'item-4', dayId: 'day-3', order: 0, name: 'Ruta a Futaleufú / opción cruce a Esquel-Bariloche', location: 'Futaleufú', type: 'Aventura', duration: 6, marks: { must: false, booked: false, done: false, lodging: true, dayvisit: false }, notes: 'Opcional según clima y papeles para Argentina.' },
   { id: 'item-5', dayId: 'day-4', order: 0, name: 'Raúl Marín Balmaceda / entorno Queulat', location: 'La Junta', type: 'Naturaleza', duration: 4, marks: { must: false, booked: false, done: false, lodging: true, dayvisit: true }, notes: '' },
@@ -37,8 +37,7 @@ const defaultData = {
 let state = structuredClone(defaultData);
 let draggedId = null;
 let supabaseClient = null;
-let saveTimer = null;
-let pendingRemoteSave = Promise.resolve();
+let hasUnsavedChanges = false;
 
 const typeStyles = {
   'Naturaleza': { cls: 'type-naturaleza', label: '🌲 Naturaleza' },
@@ -68,6 +67,25 @@ const statHoursEl = document.getElementById('statHours');
 const statDoneEl = document.getElementById('statDone');
 const saveBtn = document.getElementById('saveBtn');
 const syncStatusEl = document.getElementById('syncStatus');
+
+const entryKindEl = document.getElementById('entryKind');
+const placeFieldsEl = document.getElementById('placeFields');
+const tripFieldsEl = document.getElementById('tripFields');
+const placeNameEl = document.getElementById('placeName');
+const placeLocationEl = document.getElementById('placeLocation');
+const placeTypeEl = document.getElementById('placeType');
+const placeDurationEl = document.getElementById('placeDuration');
+const tripStartEl = document.getElementById('tripStart');
+const tripEndEl = document.getElementById('tripEnd');
+const tripModeEl = document.getElementById('tripMode');
+const tripDurationEl = document.getElementById('tripDuration');
+
+const addDayBtn = document.getElementById('addDayBtn');
+const resetBtn = document.getElementById('resetBtn');
+const exportJsonBtn = document.getElementById('exportJsonBtn');
+const importJsonBtn = document.getElementById('importJsonBtn');
+const importJsonInput = document.getElementById('importJsonInput');
+
 const syncTimeFormatter = new Intl.DateTimeFormat('es-CL', {
   hour: '2-digit',
   minute: '2-digit',
@@ -86,9 +104,113 @@ function setSaveButtonBusy(isBusy) {
   saveBtn.textContent = isBusy ? 'Guardando...' : 'Guardar planificación';
 }
 
+function setFieldRequired(field, isRequired) {
+  if (!field) return;
+  field.required = isRequired;
+}
+
+function updateEntryKindUI() {
+  const isPlace = entryKindEl.value === 'place';
+  placeFieldsEl.classList.toggle('hidden', !isPlace);
+  tripFieldsEl.classList.toggle('hidden', isPlace);
+
+  setFieldRequired(placeNameEl, isPlace);
+  setFieldRequired(placeLocationEl, isPlace);
+  setFieldRequired(tripStartEl, !isPlace);
+  setFieldRequired(tripEndEl, !isPlace);
+}
+
+function normalizeType(typeValue) {
+  const typeMap = {
+    Gastronomia: 'Gastronomía',
+    Logistica: 'Logística',
+    Auto: 'Traslado'
+  };
+
+  const normalized = typeMap[typeValue] || typeValue;
+  return typeStyles[normalized] ? normalized : 'Logística';
+}
+
+function sanitizeMarks(marks) {
+  const source = marks && typeof marks === 'object' ? marks : {};
+  return {
+    must: Boolean(source.must),
+    booked: Boolean(source.booked),
+    done: Boolean(source.done),
+    lodging: Boolean(source.lodging),
+    dayvisit: Boolean(source.dayvisit)
+  };
+}
+
+function sanitizeState(rawState) {
+  if (!rawState || typeof rawState !== 'object') {
+    throw new Error('Estado inválido: objeto esperado.');
+  }
+
+  const rawDays = Array.isArray(rawState.days) ? rawState.days : [];
+  if (rawDays.length === 0) {
+    throw new Error('El JSON no contiene días.');
+  }
+
+  const daySeen = new Set();
+  const days = rawDays.map((day, index) => {
+    const source = day && typeof day === 'object' ? day : {};
+    let id = typeof source.id === 'string' ? source.id.trim() : '';
+    if (!id) id = `day-import-${index + 1}`;
+    if (daySeen.has(id)) id = `${id}-${crypto.randomUUID().slice(0, 6)}`;
+    daySeen.add(id);
+
+    const name = typeof source.name === 'string' && source.name.trim()
+      ? source.name.trim()
+      : `Día ${index + 1}`;
+
+    return { id, name };
+  });
+
+  const validDayIds = new Set(days.map((d) => d.id));
+  const rawItems = Array.isArray(rawState.items) ? rawState.items : [];
+  const itemSeen = new Set();
+
+  const items = rawItems.map((item, index) => {
+    const source = item && typeof item === 'object' ? item : {};
+
+    let id = typeof source.id === 'string' ? source.id.trim() : '';
+    if (!id) id = `item-import-${index + 1}`;
+    if (itemSeen.has(id)) id = `${id}-${crypto.randomUUID().slice(0, 6)}`;
+    itemSeen.add(id);
+
+    const parsedDuration = Number(source.duration);
+    const duration = Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : 1;
+
+    const name = typeof source.name === 'string' ? source.name.trim() : '';
+    const location = typeof source.location === 'string' ? source.location.trim() : '';
+
+    return {
+      id,
+      dayId: typeof source.dayId === 'string' && validDayIds.has(source.dayId) ? source.dayId : null,
+      order: Number.isFinite(source.order) ? source.order : index,
+      name: name || 'Parada sin nombre',
+      location,
+      type: normalizeType(typeof source.type === 'string' ? source.type : ''),
+      duration,
+      marks: sanitizeMarks(source.marks),
+      notes: typeof source.notes === 'string' ? source.notes : ''
+    };
+  });
+
+  return { days, items };
+}
+
 function loadLocal() {
   const saved = localStorage.getItem(STORAGE_KEY);
-  return saved ? JSON.parse(saved) : structuredClone(defaultData);
+  if (!saved) return structuredClone(defaultData);
+
+  try {
+    return sanitizeState(JSON.parse(saved));
+  } catch (error) {
+    console.warn('localStorage inválido, se usa estado por defecto:', error.message);
+    return structuredClone(defaultData);
+  }
 }
 
 function getOrderKey(dayValue) {
@@ -124,6 +246,7 @@ function normalizeState() {
       item.marks = { must: false, booked: false, done: false, lodging: false, dayvisit: false };
     }
     if (typeof item.notes !== 'string') item.notes = '';
+    item.type = normalizeType(item.type);
 
     const key = getOrderKey(item.dayId);
     if (!groups.has(key)) groups.set(key, []);
@@ -144,32 +267,18 @@ function normalizeState() {
   });
 }
 
-function moveItemToDay(itemId, targetDayId) {
-  const it = state.items.find((x) => x.id === itemId);
-  if (!it) return;
-  it.dayId = targetDayId;
-  it.order = getNextOrderForDay(targetDayId, itemId);
+function markUnsaved() {
   normalizeState();
+  hasUnsavedChanges = true;
+  updateSyncStatus('Hay cambios sin guardar. Presiona "Guardar planificación".', 'pending');
 }
 
-function save(options = {}) {
-  const immediateRemote = Boolean(options.immediateRemote);
-  normalizeState();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-
-  if (!supabaseClient) {
-    updateSyncStatus('Guardado local. Configura Supabase para compartir cambios.', 'local');
-    return Promise.resolve();
-  }
-
-  if (immediateRemote) {
-    return queueRemoteSave({ immediate: true });
-  }
-
-  updateSyncStatus('Cambios detectados. Guardando en la base...', 'saving');
-  return queueRemoteSave({ immediate: false }).catch((error) => {
-    console.error('Error en cola de guardado:', error.message);
-  });
+function moveItemToDay(itemId, targetDayId) {
+  const item = state.items.find((x) => x.id === itemId);
+  if (!item) return;
+  item.dayId = targetDayId;
+  item.order = getNextOrderForDay(targetDayId, itemId);
+  markUnsaved();
 }
 
 function canUseSupabase() {
@@ -191,7 +300,7 @@ async function loadRemoteState() {
     .maybeSingle();
 
   if (error) throw error;
-  if (data?.state_json) return data.state_json;
+  if (data?.state_json) return sanitizeState(data.state_json);
 
   await saveRemoteState(structuredClone(defaultData));
   return structuredClone(defaultData);
@@ -213,56 +322,44 @@ async function saveRemoteState(nextState) {
   }
 }
 
-async function runRemoteSave(snapshot) {
+async function saveCurrentState() {
+  normalizeState();
+  const snapshot = structuredClone(state);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+
+  if (!supabaseClient) {
+    hasUnsavedChanges = false;
+    updateSyncStatus('Guardado local en este dispositivo.', 'local');
+    return;
+  }
+
   setSaveButtonBusy(true);
   updateSyncStatus('Guardando en la base...', 'saving');
+
   try {
     await saveRemoteState(snapshot);
+    hasUnsavedChanges = false;
     const syncTime = syncTimeFormatter.format(new Date());
     updateSyncStatus(`Guardado en la base a las ${syncTime}`, 'saved');
-  } catch (error) {
-    updateSyncStatus('No se pudo guardar en la base de datos.', 'error');
-    throw error;
   } finally {
     setSaveButtonBusy(false);
   }
 }
 
-function queueRemoteSave({ immediate = false } = {}) {
-  if (!supabaseClient) return;
-  if (saveTimer) {
-    clearTimeout(saveTimer);
-    saveTimer = null;
-  }
-
-  const enqueue = () => {
-    const snapshot = structuredClone(state);
-    pendingRemoteSave = pendingRemoteSave
-      .catch(() => undefined)
-      .then(() => runRemoteSave(snapshot));
-    return pendingRemoteSave;
-  };
-
-  if (immediate) {
-    return enqueue();
-  }
-
-  return new Promise((resolve, reject) => {
-    saveTimer = setTimeout(() => {
-      saveTimer = null;
-      enqueue().then(resolve).catch(reject);
-    }, 450);
-  });
-}
-
 function refreshDaySelect() {
+  const currentValue = daySelectEl.value;
   daySelectEl.innerHTML = '<option value="">Sin asignar</option>';
-  state.days.forEach(day => {
+
+  state.days.forEach((day) => {
     const opt = document.createElement('option');
     opt.value = day.id;
     opt.textContent = day.name;
     daySelectEl.appendChild(opt);
   });
+
+  if (currentValue && state.days.some((day) => day.id === currentValue)) {
+    daySelectEl.value = currentValue;
+  }
 }
 
 function buildCard(item) {
@@ -298,6 +395,7 @@ function buildCard(item) {
       tag.textContent = label;
       quickMarksEl.appendChild(tag);
     });
+
     if (isTransport && quickMarksEl.childElementCount === 0) {
       quickMarksEl.classList.add('hidden');
     } else {
@@ -305,13 +403,13 @@ function buildCard(item) {
     }
   };
 
-  card.querySelectorAll('[data-mark]').forEach(cb => {
-    const key = cb.dataset.mark;
-    cb.checked = Boolean(item.marks[key]);
-    cb.addEventListener('change', () => {
-      item.marks[key] = cb.checked;
+  card.querySelectorAll('[data-mark]').forEach((checkbox) => {
+    const key = checkbox.dataset.mark;
+    checkbox.checked = Boolean(item.marks[key]);
+    checkbox.addEventListener('change', () => {
+      item.marks[key] = checkbox.checked;
       renderQuickMarks();
-      save();
+      markUnsaved();
     });
   });
 
@@ -319,7 +417,7 @@ function buildCard(item) {
   notes.value = item.notes || '';
   notes.addEventListener('input', () => {
     item.notes = notes.value;
-    save();
+    markUnsaved();
   });
 
   const details = card.querySelector('.details');
@@ -330,8 +428,8 @@ function buildCard(item) {
   });
 
   card.querySelector('.delete').addEventListener('click', () => {
-    state.items = state.items.filter(x => x.id !== item.id);
-    save();
+    state.items = state.items.filter((x) => x.id !== item.id);
+    markUnsaved();
     render();
   });
 
@@ -339,6 +437,7 @@ function buildCard(item) {
     draggedId = item.id;
     card.classList.add('dragging');
   });
+
   card.addEventListener('dragend', () => {
     draggedId = null;
     card.classList.remove('dragging');
@@ -354,27 +453,28 @@ function buildDayColumn(day) {
   col.dataset.dayId = day.id;
   col.innerHTML = `<h3>${day.name}</h3>`;
 
-  col.addEventListener('dragover', (e) => {
-    e.preventDefault();
+  col.addEventListener('dragover', (event) => {
+    event.preventDefault();
     col.classList.add('drag-over');
   });
+
   col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
+
   col.addEventListener('drop', () => {
     col.classList.remove('drag-over');
     if (!draggedId) return;
     moveItemToDay(draggedId, day.id);
-    save();
     render();
   });
 
-  getItemsForDay(day.id).forEach(item => col.appendChild(buildCard(item)));
+  getItemsForDay(day.id).forEach((item) => col.appendChild(buildCard(item)));
   return col;
 }
 
 function updateStats() {
   const totalStops = state.items.length;
   const totalHours = state.items.reduce((sum, item) => sum + Number(item.duration || 0), 0);
-  const doneCount = state.items.filter(item => item.marks?.done).length;
+  const doneCount = state.items.filter((item) => item.marks?.done).length;
 
   statStopsEl.textContent = `${totalStops} paradas`;
   statHoursEl.textContent = `${totalHours}h estimadas`;
@@ -385,67 +485,193 @@ function render() {
   itineraryEl.innerHTML = '';
   unassignedEl.innerHTML = '';
 
-  unassignedEl.ondragover = (e) => { e.preventDefault(); unassignedEl.classList.add('drag-over'); };
+  unassignedEl.ondragover = (event) => {
+    event.preventDefault();
+    unassignedEl.classList.add('drag-over');
+  };
+
   unassignedEl.ondragleave = () => unassignedEl.classList.remove('drag-over');
+
   unassignedEl.ondrop = () => {
     unassignedEl.classList.remove('drag-over');
     if (!draggedId) return;
     moveItemToDay(draggedId, null);
-    save();
     render();
   };
 
-  getItemsForDay(null).forEach(item => unassignedEl.appendChild(buildCard(item)));
-  state.days.forEach(day => itineraryEl.appendChild(buildDayColumn(day)));
+  getItemsForDay(null).forEach((item) => unassignedEl.appendChild(buildCard(item)));
+  state.days.forEach((day) => itineraryEl.appendChild(buildDayColumn(day)));
   refreshDaySelect();
   updateStats();
 }
 
-form.addEventListener('submit', (e) => {
-  e.preventDefault();
-  const item = {
+function buildItemFromForm() {
+  const dayId = daySelectEl.value || null;
+  const kind = entryKindEl.value;
+
+  if (kind === 'trip') {
+    const start = tripStartEl.value.trim();
+    const end = tripEndEl.value.trim();
+    const mode = tripModeEl.value;
+    const duration = Number(tripDurationEl.value || 1);
+
+    if (!start || !end) {
+      throw new Error('Completa inicio y fin del viaje.');
+    }
+
+    const route = `${start} -> ${end}`;
+
+    return {
+      id: crypto.randomUUID(),
+      dayId,
+      order: getNextOrderForDay(dayId),
+      name: mode === 'Ferry' ? `Ferry ${route}` : `Viaje ${route}`,
+      location: route,
+      type: normalizeType(mode),
+      duration: Number.isFinite(duration) && duration > 0 ? duration : 1,
+      marks: { must: false, booked: false, done: false, lodging: false, dayvisit: false },
+      notes: ''
+    };
+  }
+
+  const placeName = placeNameEl.value.trim();
+  const placeLocation = placeLocationEl.value.trim();
+  const placeType = normalizeType(placeTypeEl.value);
+  const placeDuration = Number(placeDurationEl.value || 1);
+
+  if (!placeName || !placeLocation) {
+    throw new Error('Completa nombre y lugar de la parada.');
+  }
+
+  return {
     id: crypto.randomUUID(),
-    dayId: daySelectEl.value || null,
-    order: getNextOrderForDay(daySelectEl.value || null),
-    name: document.getElementById('name').value.trim(),
-    location: document.getElementById('location').value.trim(),
-    type: document.getElementById('type').value,
-    duration: Number(document.getElementById('duration').value || 1),
+    dayId,
+    order: getNextOrderForDay(dayId),
+    name: placeName,
+    location: placeLocation,
+    type: placeType,
+    duration: Number.isFinite(placeDuration) && placeDuration > 0 ? placeDuration : 1,
     marks: { must: false, booked: false, done: false, lodging: false, dayvisit: false },
     notes: ''
   };
-  state.items.push(item);
-  form.reset();
-  document.getElementById('duration').value = 2;
-  save();
-  render();
-});
-
-if (saveBtn) {
-  saveBtn.addEventListener('click', async () => {
-    try {
-      await save({ immediateRemote: true });
-    } catch (error) {
-      console.error('Error guardando manualmente:', error.message);
-    }
-  });
 }
 
-document.getElementById('addDayBtn').addEventListener('click', () => {
+function resetFormAfterSubmit(selectedKind, selectedDayId) {
+  form.reset();
+  entryKindEl.value = selectedKind;
+  placeDurationEl.value = 2;
+  tripDurationEl.value = 4;
+  daySelectEl.value = selectedDayId || '';
+  updateEntryKindUI();
+}
+
+function exportStateAsJson() {
+  normalizeState();
+  const payload = JSON.stringify(state, null, 2);
+  const blob = new Blob([payload], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+
+  anchor.href = url;
+  anchor.download = `carretera-austral-${stamp}.json`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+
+  updateSyncStatus('JSON exportado correctamente.', hasUnsavedChanges ? 'pending' : (supabaseClient ? 'saved' : 'local'));
+}
+
+async function importStateFromFile(file) {
+  if (!file) return;
+
+  const text = await file.text();
+  const parsed = JSON.parse(text);
+  const imported = sanitizeState(parsed);
+
+  const confirmed = window.confirm('Este JSON reemplazará la planificación actual. ¿Continuar?');
+  if (!confirmed) return;
+
+  state = imported;
+  normalizeState();
+  render();
+  markUnsaved();
+}
+
+form.addEventListener('submit', (event) => {
+  event.preventDefault();
+
+  try {
+    const selectedKind = entryKindEl.value;
+    const selectedDayId = daySelectEl.value || null;
+    const item = buildItemFromForm();
+
+    state.items.push(item);
+    markUnsaved();
+    render();
+    resetFormAfterSubmit(selectedKind, selectedDayId);
+  } catch (error) {
+    window.alert(error.message);
+  }
+});
+
+entryKindEl.addEventListener('change', () => {
+  updateEntryKindUI();
+});
+
+saveBtn.addEventListener('click', async () => {
+  if (!hasUnsavedChanges) {
+    updateSyncStatus('No hay cambios sin guardar.', supabaseClient ? 'saved' : 'local');
+    return;
+  }
+
+  try {
+    await saveCurrentState();
+  } catch (error) {
+    console.error('Error al guardar:', error.message);
+    updateSyncStatus('No se pudo guardar en la base de datos.', 'error');
+  }
+});
+
+addDayBtn.addEventListener('click', () => {
   const next = state.days.length + 1;
   state.days.push({ id: crypto.randomUUID(), name: `Día ${next}` });
-  save();
+  markUnsaved();
   render();
 });
 
-document.getElementById('resetBtn').addEventListener('click', () => {
-  if (!confirm('¿Seguro que quieres cargar la base recomendada de 12 días (Puerto Montt)?')) return;
+resetBtn.addEventListener('click', () => {
+  if (!window.confirm('¿Seguro que quieres cargar la base recomendada de 12 días (Puerto Montt)?')) return;
   state = structuredClone(defaultData);
-  save();
+  normalizeState();
+  markUnsaved();
   render();
+});
+
+exportJsonBtn.addEventListener('click', () => {
+  exportStateAsJson();
+});
+
+importJsonBtn.addEventListener('click', () => {
+  importJsonInput.click();
+});
+
+importJsonInput.addEventListener('change', async () => {
+  const file = importJsonInput.files?.[0];
+
+  try {
+    await importStateFromFile(file);
+  } catch (error) {
+    console.error('Error importando JSON:', error.message);
+    updateSyncStatus('JSON inválido. Revisa el archivo e intenta de nuevo.', 'error');
+  } finally {
+    importJsonInput.value = '';
+  }
 });
 
 async function init() {
+  updateEntryKindUI();
   initSupabase();
 
   if (supabaseClient) {
@@ -455,18 +681,15 @@ async function init() {
     } catch (error) {
       console.error('No se pudo cargar Supabase, usando localStorage:', error.message);
       state = loadLocal();
-      updateSyncStatus('No se pudo leer Supabase. Usando datos locales.', 'error');
+      updateSyncStatus('No se pudo leer Supabase. Se cargó respaldo local.', 'error');
     }
   } else {
     state = loadLocal();
-    updateSyncStatus('Modo local activo (Supabase no configurado).', 'local');
-    if (saveBtn) {
-      saveBtn.disabled = true;
-      saveBtn.textContent = 'Guardar (solo local)';
-    }
+    updateSyncStatus('Modo local activo (sin conexión a Supabase).', 'local');
   }
 
   normalizeState();
+  hasUnsavedChanges = false;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   render();
 }
