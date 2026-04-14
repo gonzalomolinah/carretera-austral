@@ -2,7 +2,17 @@ const STORAGE_KEY = 'carretera-austral-planner-v2';
 const SUPABASE_URL = 'https://cioggccobgnglprrvfpk.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_v_qzelV5YofpbQWaxf4wIw_mhKt-WOh';
 const SUPABASE_TABLE = 'planner_state';
-const SUPABASE_PLAN_ID = 'carretera-austral-public';
+const SUPABASE_PLAN_PREFIX = 'carretera-austral-';
+
+const PLAN_OPTIONS = [
+  { key: 'general', label: 'General' },
+  { key: 'molina', label: 'Molina' },
+  { key: 'inaki', label: 'Iñaki' },
+  { key: 'nef', label: 'Nef' },
+  { key: 'ross', label: 'Ross' }
+];
+
+const DEFAULT_PLAN_KEY = PLAN_OPTIONS[0].key;
 
 const defaultDays = Array.from({ length: 12 }, (_, i) => ({
   id: `day-${i + 1}`,
@@ -38,15 +48,16 @@ let state = structuredClone(defaultData);
 let draggedId = null;
 let supabaseClient = null;
 let hasUnsavedChanges = false;
+let currentPlanKey = DEFAULT_PLAN_KEY;
 
 const typeStyles = {
-  'Naturaleza': { cls: 'type-naturaleza', label: '🌲 Naturaleza' },
-  'Aventura': { cls: 'type-aventura', label: '🧗 Aventura' },
-  'Cultura': { cls: 'type-cultura', label: '🏛️ Cultura' },
+  Naturaleza: { cls: 'type-naturaleza', label: '🌲 Naturaleza' },
+  Aventura: { cls: 'type-aventura', label: '🧗 Aventura' },
+  Cultura: { cls: 'type-cultura', label: '🏛️ Cultura' },
   'Gastronomía': { cls: 'type-gastronomia', label: '🍲 Gastronomía' },
   'Logística': { cls: 'type-logistica', label: '🛳️ Logística' },
-  'Traslado': { cls: 'type-traslado', label: '🚐 Traslado' },
-  'Ferry': { cls: 'type-ferry', label: '⛴️ Ferry' }
+  Traslado: { cls: 'type-traslado', label: '🚐 Traslado' },
+  Ferry: { cls: 'type-ferry', label: '⛴️ Ferry' }
 };
 
 const markLabels = {
@@ -67,6 +78,7 @@ const statHoursEl = document.getElementById('statHours');
 const statDoneEl = document.getElementById('statDone');
 const saveBtn = document.getElementById('saveBtn');
 const syncStatusEl = document.getElementById('syncStatus');
+const planSelectEl = document.getElementById('planSelect');
 
 const entryKindEl = document.getElementById('entryKind');
 const placeFieldsEl = document.getElementById('placeFields');
@@ -92,6 +104,21 @@ const syncTimeFormatter = new Intl.DateTimeFormat('es-CL', {
   second: '2-digit'
 });
 
+function getPlanLabel(planKey) {
+  return PLAN_OPTIONS.find((plan) => plan.key === planKey)?.label || planKey;
+}
+
+function getPlanRowId(planKey) {
+  return `${SUPABASE_PLAN_PREFIX}${planKey}`;
+}
+
+function createDefaultStore() {
+  return {
+    selectedPlanKey: DEFAULT_PLAN_KEY,
+    plans: {}
+  };
+}
+
 function updateSyncStatus(message, level = 'local') {
   if (!syncStatusEl) return;
   syncStatusEl.textContent = message;
@@ -102,6 +129,11 @@ function setSaveButtonBusy(isBusy) {
   if (!saveBtn) return;
   saveBtn.disabled = isBusy;
   saveBtn.textContent = isBusy ? 'Guardando...' : 'Guardar planificación';
+}
+
+function setPlanSelectBusy(isBusy) {
+  if (!planSelectEl) return;
+  planSelectEl.disabled = isBusy;
 }
 
 function setFieldRequired(field, isRequired) {
@@ -201,16 +233,86 @@ function sanitizeState(rawState) {
   return { days, items };
 }
 
-function loadLocal() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (!saved) return structuredClone(defaultData);
+function parseLocalStore(rawText) {
+  if (!rawText) return createDefaultStore();
 
   try {
-    return sanitizeState(JSON.parse(saved));
+    const parsed = JSON.parse(rawText);
+
+    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.days) && Array.isArray(parsed.items)) {
+      const legacyState = sanitizeState(parsed);
+      return {
+        selectedPlanKey: DEFAULT_PLAN_KEY,
+        plans: {
+          [DEFAULT_PLAN_KEY]: legacyState
+        }
+      };
+    }
+
+    if (!parsed || typeof parsed !== 'object') return createDefaultStore();
+
+    const safeStore = createDefaultStore();
+    const selected = typeof parsed.selectedPlanKey === 'string' ? parsed.selectedPlanKey : DEFAULT_PLAN_KEY;
+    safeStore.selectedPlanKey = PLAN_OPTIONS.some((p) => p.key === selected) ? selected : DEFAULT_PLAN_KEY;
+
+    if (parsed.plans && typeof parsed.plans === 'object') {
+      PLAN_OPTIONS.forEach((plan) => {
+        const value = parsed.plans[plan.key];
+        if (!value) return;
+
+        try {
+          safeStore.plans[plan.key] = sanitizeState(value);
+        } catch (error) {
+          console.warn(`Plan local inválido (${plan.key}), se ignora:`, error.message);
+        }
+      });
+    }
+
+    return safeStore;
   } catch (error) {
-    console.warn('localStorage inválido, se usa estado por defecto:', error.message);
-    return structuredClone(defaultData);
+    console.warn('localStorage inválido, se usa almacenamiento limpio:', error.message);
+    return createDefaultStore();
   }
+}
+
+function readLocalStore() {
+  return parseLocalStore(localStorage.getItem(STORAGE_KEY));
+}
+
+function writeLocalStore(store) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+}
+
+function getLocalPlanState(planKey) {
+  const store = readLocalStore();
+  const planState = store.plans[planKey];
+  return planState ? sanitizeState(planState) : structuredClone(defaultData);
+}
+
+function persistLocalPlanState(planKey, planState) {
+  const store = readLocalStore();
+  store.plans[planKey] = sanitizeState(planState);
+  store.selectedPlanKey = planKey;
+  writeLocalStore(store);
+}
+
+function getInitialPlanKey() {
+  const store = readLocalStore();
+  const selected = store.selectedPlanKey;
+  return PLAN_OPTIONS.some((plan) => plan.key === selected) ? selected : DEFAULT_PLAN_KEY;
+}
+
+function populatePlanSelect() {
+  planSelectEl.innerHTML = '';
+
+  PLAN_OPTIONS.forEach((plan) => {
+    const option = document.createElement('option');
+    option.value = plan.key;
+    option.textContent = plan.label;
+    planSelectEl.appendChild(option);
+  });
+
+  planSelectEl.value = currentPlanKey;
 }
 
 function getOrderKey(dayValue) {
@@ -270,7 +372,7 @@ function normalizeState() {
 function markUnsaved() {
   normalizeState();
   hasUnsavedChanges = true;
-  updateSyncStatus('Hay cambios sin guardar. Presiona "Guardar planificación".', 'pending');
+  updateSyncStatus(`Hay cambios sin guardar en "${getPlanLabel(currentPlanKey)}". Presiona "Guardar planificación".`, 'pending');
 }
 
 function moveItemToDay(itemId, targetDayId) {
@@ -292,23 +394,25 @@ function initSupabase() {
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 }
 
-async function loadRemoteState() {
+async function loadRemoteState(planKey) {
+  const rowId = getPlanRowId(planKey);
+
   const { data, error } = await supabaseClient
     .from(SUPABASE_TABLE)
     .select('state_json')
-    .eq('id', SUPABASE_PLAN_ID)
+    .eq('id', rowId)
     .maybeSingle();
 
   if (error) throw error;
   if (data?.state_json) return sanitizeState(data.state_json);
 
-  await saveRemoteState(structuredClone(defaultData));
+  await saveRemoteState(planKey, structuredClone(defaultData));
   return structuredClone(defaultData);
 }
 
-async function saveRemoteState(nextState) {
+async function saveRemoteState(planKey, nextState) {
   const payload = {
-    id: SUPABASE_PLAN_ID,
+    id: getPlanRowId(planKey),
     state_json: nextState,
     updated_at: new Date().toISOString()
   };
@@ -325,24 +429,77 @@ async function saveRemoteState(nextState) {
 async function saveCurrentState() {
   normalizeState();
   const snapshot = structuredClone(state);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+  persistLocalPlanState(currentPlanKey, snapshot);
 
   if (!supabaseClient) {
     hasUnsavedChanges = false;
-    updateSyncStatus('Guardado local en este dispositivo.', 'local');
+    updateSyncStatus(`Planificación "${getPlanLabel(currentPlanKey)}" guardada localmente.`, 'local');
     return;
   }
 
   setSaveButtonBusy(true);
-  updateSyncStatus('Guardando en la base...', 'saving');
+  updateSyncStatus(`Guardando "${getPlanLabel(currentPlanKey)}" en la base...`, 'saving');
 
   try {
-    await saveRemoteState(snapshot);
+    await saveRemoteState(currentPlanKey, snapshot);
     hasUnsavedChanges = false;
     const syncTime = syncTimeFormatter.format(new Date());
-    updateSyncStatus(`Guardado en la base a las ${syncTime}`, 'saved');
+    updateSyncStatus(`Planificación "${getPlanLabel(currentPlanKey)}" guardada a las ${syncTime}.`, 'saved');
   } finally {
     setSaveButtonBusy(false);
+  }
+}
+
+async function switchToPlan(nextPlanKey, options = {}) {
+  const { force = false } = options;
+
+  if (!PLAN_OPTIONS.some((plan) => plan.key === nextPlanKey)) return;
+
+  if (!force && nextPlanKey === currentPlanKey) {
+    planSelectEl.value = currentPlanKey;
+    return;
+  }
+
+  if (!force && hasUnsavedChanges) {
+    const shouldContinue = window.confirm(
+      `Hay cambios sin guardar en "${getPlanLabel(currentPlanKey)}". Si cambias de planificación, esos cambios se perderán. ¿Continuar?`
+    );
+
+    if (!shouldContinue) {
+      planSelectEl.value = currentPlanKey;
+      return;
+    }
+  }
+
+  setPlanSelectBusy(true);
+  updateSyncStatus(`Cargando planificación "${getPlanLabel(nextPlanKey)}"...`, 'saving');
+
+  try {
+    let nextState;
+
+    if (supabaseClient) {
+      try {
+        nextState = await loadRemoteState(nextPlanKey);
+        updateSyncStatus(`Planificación "${getPlanLabel(nextPlanKey)}" cargada desde la base de datos.`, 'saved');
+      } catch (error) {
+        console.error(`No se pudo cargar ${nextPlanKey} desde Supabase:`, error.message);
+        nextState = getLocalPlanState(nextPlanKey);
+        updateSyncStatus(`No se pudo leer "${getPlanLabel(nextPlanKey)}" desde Supabase. Se cargó respaldo local.`, 'error');
+      }
+    } else {
+      nextState = getLocalPlanState(nextPlanKey);
+      updateSyncStatus(`Planificación "${getPlanLabel(nextPlanKey)}" en modo local.`, 'local');
+    }
+
+    state = sanitizeState(nextState);
+    currentPlanKey = nextPlanKey;
+    hasUnsavedChanges = false;
+    persistLocalPlanState(currentPlanKey, state);
+    normalizeState();
+    render();
+    planSelectEl.value = currentPlanKey;
+  } finally {
+    setPlanSelectBusy(false);
   }
 }
 
@@ -574,13 +731,13 @@ function exportStateAsJson() {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 
   anchor.href = url;
-  anchor.download = `carretera-austral-${stamp}.json`;
+  anchor.download = `carretera-austral-${currentPlanKey}-${stamp}.json`;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(url);
 
-  updateSyncStatus('JSON exportado correctamente.', hasUnsavedChanges ? 'pending' : (supabaseClient ? 'saved' : 'local'));
+  updateSyncStatus(`JSON exportado (${getPlanLabel(currentPlanKey)}).`, hasUnsavedChanges ? 'pending' : (supabaseClient ? 'saved' : 'local'));
 }
 
 async function importStateFromFile(file) {
@@ -590,7 +747,10 @@ async function importStateFromFile(file) {
   const parsed = JSON.parse(text);
   const imported = sanitizeState(parsed);
 
-  const confirmed = window.confirm('Este JSON reemplazará la planificación actual. ¿Continuar?');
+  const confirmed = window.confirm(
+    `Este JSON reemplazará la planificación "${getPlanLabel(currentPlanKey)}". ¿Continuar?`
+  );
+
   if (!confirmed) return;
 
   state = imported;
@@ -620,9 +780,19 @@ entryKindEl.addEventListener('change', () => {
   updateEntryKindUI();
 });
 
+planSelectEl.addEventListener('change', async () => {
+  try {
+    await switchToPlan(planSelectEl.value);
+  } catch (error) {
+    console.error('Error cambiando de planificación:', error.message);
+    planSelectEl.value = currentPlanKey;
+    updateSyncStatus('No se pudo cambiar de planificación.', 'error');
+  }
+});
+
 saveBtn.addEventListener('click', async () => {
   if (!hasUnsavedChanges) {
-    updateSyncStatus('No hay cambios sin guardar.', supabaseClient ? 'saved' : 'local');
+    updateSyncStatus(`No hay cambios sin guardar en "${getPlanLabel(currentPlanKey)}".`, supabaseClient ? 'saved' : 'local');
     return;
   }
 
@@ -630,7 +800,7 @@ saveBtn.addEventListener('click', async () => {
     await saveCurrentState();
   } catch (error) {
     console.error('Error al guardar:', error.message);
-    updateSyncStatus('No se pudo guardar en la base de datos.', 'error');
+    updateSyncStatus(`No se pudo guardar "${getPlanLabel(currentPlanKey)}" en la base de datos.`, 'error');
   }
 });
 
@@ -642,7 +812,12 @@ addDayBtn.addEventListener('click', () => {
 });
 
 resetBtn.addEventListener('click', () => {
-  if (!window.confirm('¿Seguro que quieres cargar la base recomendada de 12 días (Puerto Montt)?')) return;
+  const confirmed = window.confirm(
+    `¿Seguro que quieres cargar la base recomendada de 12 días en "${getPlanLabel(currentPlanKey)}"?`
+  );
+
+  if (!confirmed) return;
+
   state = structuredClone(defaultData);
   normalizeState();
   markUnsaved();
@@ -674,24 +849,20 @@ async function init() {
   updateEntryKindUI();
   initSupabase();
 
-  if (supabaseClient) {
-    try {
-      state = await loadRemoteState();
-      updateSyncStatus('Planificación cargada desde la base de datos.', 'saved');
-    } catch (error) {
-      console.error('No se pudo cargar Supabase, usando localStorage:', error.message);
-      state = loadLocal();
-      updateSyncStatus('No se pudo leer Supabase. Se cargó respaldo local.', 'error');
-    }
-  } else {
-    state = loadLocal();
-    updateSyncStatus('Modo local activo (sin conexión a Supabase).', 'local');
+  currentPlanKey = getInitialPlanKey();
+  populatePlanSelect();
+
+  try {
+    await switchToPlan(currentPlanKey, { force: true });
+  } catch (error) {
+    console.error('Error inicializando planificación:', error.message);
+    state = structuredClone(defaultData);
+    normalizeState();
+    render();
+    updateSyncStatus('No se pudo cargar la planificación inicial.', 'error');
   }
 
-  normalizeState();
   hasUnsavedChanges = false;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  render();
 }
 
 init();

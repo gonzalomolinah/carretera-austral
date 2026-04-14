@@ -17,17 +17,49 @@ create policy planner_state_public_read
   on public.planner_state
   for select
   to anon, authenticated
-  using (id = 'carretera-austral-public');
+  using (
+    id in (
+      'carretera-austral-general',
+      'carretera-austral-molina',
+      'carretera-austral-inaki',
+      'carretera-austral-nef',
+      'carretera-austral-ross'
+    )
+  );
 
 create policy planner_state_public_insert
   on public.planner_state
   for insert
   to anon, authenticated
-  with check (id = 'carretera-austral-public');
+  with check (
+    id in (
+      'carretera-austral-general',
+      'carretera-austral-molina',
+      'carretera-austral-inaki',
+      'carretera-austral-nef',
+      'carretera-austral-ross'
+    )
+  );
 
 create policy planner_state_public_update
   on public.planner_state
   for update
   to anon, authenticated
-  using (id = 'carretera-austral-public')
-  with check (id = 'carretera-austral-public');
+  using (
+    id in (
+      'carretera-austral-general',
+      'carretera-austral-molina',
+      'carretera-austral-inaki',
+      'carretera-austral-nef',
+      'carretera-austral-ross'
+    )
+  )
+  with check (
+    id in (
+      'carretera-austral-general',
+      'carretera-austral-molina',
+      'carretera-austral-inaki',
+      'carretera-austral-nef',
+      'carretera-austral-ross'
+    )
+  );

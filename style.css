@@ -129,6 +129,14 @@ label {
   font-size: 0.9rem;
 }
 
+.plan-switcher {
+  margin-bottom: 0.4rem;
+}
+
+.plan-switcher label {
+  margin-bottom: 0.6rem;
+}
+
 input,
 select,
 button,
