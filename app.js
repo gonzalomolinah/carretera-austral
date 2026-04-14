@@ -1,4 +1,8 @@
 const STORAGE_KEY = 'carretera-austral-planner-v2';
+const SUPABASE_URL = 'PEGA_AQUI_TU_SUPABASE_URL';
+const SUPABASE_ANON_KEY = 'PEGA_AQUI_TU_SUPABASE_ANON_KEY';
+const SUPABASE_TABLE = 'planner_state';
+const SUPABASE_PLAN_ID = 'carretera-austral-public';
 
 const baseDays = Array.from({ length: 12 }, (_, i) => ({
   id: crypto.randomUUID(),
@@ -39,8 +43,11 @@ const defaultData = {
   ]
 };
 
-let state = load();
+let state = structuredClone(defaultData);
 let draggedId = null;
+let supabaseClient = null;
+let saveTimer = null;
+let pendingRemoteSave = Promise.resolve();
 
 const typeStyles = {
   'Naturaleza': { cls: 'type-naturaleza', label: '🌲 Naturaleza' },
@@ -69,13 +76,67 @@ const statStopsEl = document.getElementById('statStops');
 const statHoursEl = document.getElementById('statHours');
 const statDoneEl = document.getElementById('statDone');
 
-function load() {
+function loadLocal() {
   const saved = localStorage.getItem(STORAGE_KEY);
   return saved ? JSON.parse(saved) : structuredClone(defaultData);
 }
 
 function save() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  queueRemoteSave();
+}
+
+function canUseSupabase() {
+  const hasPlaceholders =
+    SUPABASE_URL.includes('PEGA_AQUI') || SUPABASE_ANON_KEY.includes('PEGA_AQUI');
+  return Boolean(window.supabase) && !hasPlaceholders;
+}
+
+function initSupabase() {
+  if (!canUseSupabase()) return;
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}
+
+async function loadRemoteState() {
+  const { data, error } = await supabaseClient
+    .from(SUPABASE_TABLE)
+    .select('state_json')
+    .eq('id', SUPABASE_PLAN_ID)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (data?.state_json) return data.state_json;
+
+  await saveRemoteState(structuredClone(defaultData));
+  return structuredClone(defaultData);
+}
+
+async function saveRemoteState(nextState) {
+  const payload = {
+    id: SUPABASE_PLAN_ID,
+    state_json: nextState,
+    updated_at: new Date().toISOString()
+  };
+
+  const { error } = await supabaseClient
+    .from(SUPABASE_TABLE)
+    .upsert(payload, { onConflict: 'id' });
+
+  if (error) {
+    console.error('Error guardando en Supabase:', error.message);
+  }
+}
+
+function queueRemoteSave() {
+  if (!supabaseClient) return;
+  if (saveTimer) clearTimeout(saveTimer);
+
+  saveTimer = setTimeout(() => {
+    const snapshot = structuredClone(state);
+    pendingRemoteSave = pendingRemoteSave
+      .then(() => saveRemoteState(snapshot))
+      .catch((err) => console.error('Error de cola Supabase:', err));
+  }, 450);
 }
 
 function refreshDaySelect() {
@@ -260,4 +321,22 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   render();
 });
 
-render();
+async function init() {
+  initSupabase();
+
+  if (supabaseClient) {
+    try {
+      state = await loadRemoteState();
+    } catch (error) {
+      console.error('No se pudo cargar Supabase, usando localStorage:', error.message);
+      state = loadLocal();
+    }
+  } else {
+    state = loadLocal();
+  }
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  render();
+}
+
+init();
