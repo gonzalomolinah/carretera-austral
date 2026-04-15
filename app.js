@@ -56,6 +56,7 @@ let draggedId = null;
 let supabaseClient = null;
 let hasUnsavedChanges = false;
 let currentPlanKey = DEFAULT_PLAN_KEY;
+let mobileDayIndex = 0;
 
 const typeStyles = {
   Naturaleza: { cls: 'type-naturaleza', label: '🌲 Naturaleza' },
@@ -104,6 +105,12 @@ const resetBtn = document.getElementById('resetBtn');
 const exportJsonBtn = document.getElementById('exportJsonBtn');
 const importJsonBtn = document.getElementById('importJsonBtn');
 const importJsonInput = document.getElementById('importJsonInput');
+const copyPlanSelectEl = document.getElementById('copyPlanSelect');
+const copyPlanBtn = document.getElementById('copyPlanBtn');
+const mobileDayNavEl = document.getElementById('mobileDayNav');
+const prevDayBtn = document.getElementById('prevDayBtn');
+const nextDayBtn = document.getElementById('nextDayBtn');
+const mobileViewportQuery = window.matchMedia('(max-width: 900px)');
 
 const syncTimeFormatter = new Intl.DateTimeFormat('es-CL', {
   hour: '2-digit',
@@ -322,6 +329,30 @@ function populatePlanSelect() {
   planSelectEl.value = currentPlanKey;
 }
 
+function refreshCopyPlanOptions() {
+  if (!copyPlanSelectEl || !copyPlanBtn) return;
+
+  const previousSelection = copyPlanSelectEl.value;
+  copyPlanSelectEl.innerHTML = '';
+
+  PLAN_OPTIONS
+    .filter((plan) => plan.key !== currentPlanKey)
+    .forEach((plan) => {
+      const option = document.createElement('option');
+      option.value = plan.key;
+      option.textContent = plan.label;
+      copyPlanSelectEl.appendChild(option);
+    });
+
+  if (previousSelection && previousSelection !== currentPlanKey) {
+    copyPlanSelectEl.value = previousSelection;
+  }
+
+  const hasTargets = copyPlanSelectEl.options.length > 0;
+  copyPlanSelectEl.disabled = !hasTargets;
+  copyPlanBtn.disabled = !hasTargets;
+}
+
 function getOrderKey(dayValue) {
   return dayValue || '__unassigned__';
 }
@@ -501,9 +532,11 @@ async function switchToPlan(nextPlanKey, options = {}) {
 
     state = sanitizeState(nextState);
     currentPlanKey = nextPlanKey;
+    mobileDayIndex = 0;
     hasUnsavedChanges = false;
     persistLocalPlanState(currentPlanKey, state);
     normalizeState();
+    refreshCopyPlanOptions();
     render();
     planSelectEl.value = currentPlanKey;
   } finally {
@@ -641,7 +674,39 @@ function buildDayColumn(day) {
   const col = document.createElement('section');
   col.className = 'day';
   col.dataset.dayId = day.id;
-  col.innerHTML = `<h3>${day.name}</h3>`;
+  col.innerHTML = `
+    <div class="day-head">
+      <h3>${day.name}</h3>
+      <button type="button" class="day-delete">Eliminar día</button>
+    </div>
+  `;
+
+  const deleteDayBtn = col.querySelector('.day-delete');
+  deleteDayBtn.addEventListener('click', () => {
+    if (state.days.length <= 1) {
+      window.alert('Debe quedar al menos un día en la planificación.');
+      return;
+    }
+
+    const dayItems = getItemsForDay(day.id);
+    const itemCount = dayItems.length;
+    const confirmed = window.confirm(
+      `¿Eliminar ${day.name}? ${itemCount > 0 ? `Sus ${itemCount} parada(s) pasarán a "Sin asignar".` : ''}`
+    );
+
+    if (!confirmed) return;
+
+    let nextUnassignedOrder = getNextOrderForDay(null);
+    dayItems.forEach((item) => {
+      item.dayId = null;
+      item.order = nextUnassignedOrder;
+      nextUnassignedOrder += 1;
+    });
+
+    state.days = state.days.filter((entry) => entry.id !== day.id);
+    markUnsaved();
+    render();
+  });
 
   col.addEventListener('dragover', (event) => {
     event.preventDefault();
@@ -659,6 +724,72 @@ function buildDayColumn(day) {
 
   getItemsForDay(day.id).forEach((item) => col.appendChild(buildCard(item)));
   return col;
+}
+
+function clampMobileDayIndex() {
+  const maxIndex = Math.max(state.days.length - 1, 0);
+  mobileDayIndex = Math.min(Math.max(mobileDayIndex, 0), maxIndex);
+}
+
+function applyMobileDayNavigation() {
+  if (!mobileDayNavEl || !prevDayBtn || !nextDayBtn) return;
+
+  const dayColumns = Array.from(itineraryEl.querySelectorAll('.day'));
+  const isMobile = mobileViewportQuery.matches;
+  const hasDays = dayColumns.length > 0;
+
+  mobileDayNavEl.classList.toggle('is-hidden', !isMobile || !hasDays);
+
+  if (!isMobile || !hasDays) {
+    dayColumns.forEach((col) => col.classList.remove('mobile-hidden'));
+    return;
+  }
+
+  clampMobileDayIndex();
+
+  dayColumns.forEach((col, index) => {
+    col.classList.toggle('mobile-hidden', index !== mobileDayIndex);
+  });
+
+  prevDayBtn.disabled = mobileDayIndex === 0;
+  nextDayBtn.disabled = mobileDayIndex === dayColumns.length - 1;
+}
+
+async function copyCurrentPlanTo(targetPlanKey) {
+  if (!targetPlanKey || targetPlanKey === currentPlanKey) return;
+  if (!PLAN_OPTIONS.some((plan) => plan.key === targetPlanKey)) return;
+
+  const targetLabel = getPlanLabel(targetPlanKey);
+  const confirmed = window.confirm(
+    `Se copiará "${getPlanLabel(currentPlanKey)}" sobre "${targetLabel}". ¿Continuar?`
+  );
+
+  if (!confirmed) return;
+
+  normalizeState();
+  const snapshot = sanitizeState(structuredClone(state));
+  const store = readLocalStore();
+  store.plans[targetPlanKey] = snapshot;
+  store.selectedPlanKey = currentPlanKey;
+  writeLocalStore(store);
+
+  if (!supabaseClient) {
+    updateSyncStatus(`Planificación copiada a "${targetLabel}" en modo local.`, hasUnsavedChanges ? 'pending' : 'local');
+    return;
+  }
+
+  updateSyncStatus(`Copiando planificación a "${targetLabel}"...`, 'saving');
+
+  try {
+    await saveRemoteState(targetPlanKey, snapshot);
+    updateSyncStatus(
+      `Planificación copiada desde "${getPlanLabel(currentPlanKey)}" a "${targetLabel}".`,
+      hasUnsavedChanges ? 'pending' : 'saved'
+    );
+  } catch (error) {
+    console.error('Error copiando planificación:', error.message);
+    updateSyncStatus(`Se copió localmente a "${targetLabel}", pero falló el guardado en la base.`, 'error');
+  }
 }
 
 function updateStats() {
@@ -691,6 +822,8 @@ function render() {
 
   getItemsForDay(null).forEach((item) => unassignedEl.appendChild(buildCard(item)));
   state.days.forEach((day) => itineraryEl.appendChild(buildDayColumn(day)));
+  clampMobileDayIndex();
+  applyMobileDayNavigation();
   refreshDaySelect();
   updateStats();
 }
@@ -823,6 +956,37 @@ planSelectEl.addEventListener('change', async () => {
   }
 });
 
+copyPlanBtn.addEventListener('click', async () => {
+  try {
+    await copyCurrentPlanTo(copyPlanSelectEl.value);
+  } catch (error) {
+    console.error('Error al copiar planificación:', error.message);
+    updateSyncStatus('No se pudo copiar la planificación seleccionada.', 'error');
+  }
+});
+
+prevDayBtn.addEventListener('click', () => {
+  if (mobileDayIndex <= 0) return;
+  mobileDayIndex -= 1;
+  applyMobileDayNavigation();
+});
+
+nextDayBtn.addEventListener('click', () => {
+  if (mobileDayIndex >= state.days.length - 1) return;
+  mobileDayIndex += 1;
+  applyMobileDayNavigation();
+});
+
+if (typeof mobileViewportQuery.addEventListener === 'function') {
+  mobileViewportQuery.addEventListener('change', () => {
+    applyMobileDayNavigation();
+  });
+} else if (typeof mobileViewportQuery.addListener === 'function') {
+  mobileViewportQuery.addListener(() => {
+    applyMobileDayNavigation();
+  });
+}
+
 saveBtn.addEventListener('click', async () => {
   if (!hasUnsavedChanges) {
     updateSyncStatus(`No hay cambios sin guardar en "${getPlanLabel(currentPlanKey)}".`, supabaseClient ? 'saved' : 'local');
@@ -884,6 +1048,7 @@ async function init() {
 
   currentPlanKey = getInitialPlanKey();
   populatePlanSelect();
+  refreshCopyPlanOptions();
 
   try {
     await switchToPlan(currentPlanKey, { force: true });

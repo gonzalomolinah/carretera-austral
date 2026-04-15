@@ -92,6 +92,12 @@
         <button id="addDayBtn">+ Agregar día</button>
         <button id="resetBtn" class="danger">Reiniciar demo</button>
       </div>
+      <div class="copy-plan-panel">
+        <label>Copiar planificación actual a
+          <select id="copyPlanSelect"></select>
+        </label>
+        <button id="copyPlanBtn" type="button">Copiar planificación</button>
+      </div>
       <div class="controls controls-io">
         <button id="exportJsonBtn" type="button">Exportar JSON</button>
         <button id="importJsonBtn" type="button">Subir JSON</button>
@@ -118,6 +124,10 @@
         </div>
       </div>
       <div id="itinerary" class="itinerary"></div>
+      <div id="mobileDayNav" class="mobile-day-nav" aria-label="Navegación por día">
+        <button id="prevDayBtn" type="button" class="day-nav-btn">Día anterior</button>
+        <button id="nextDayBtn" type="button" class="day-nav-btn">Día siguiente</button>
+      </div>
     </section>
   </main>
 

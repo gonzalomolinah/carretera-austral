@@ -204,6 +204,18 @@ button.danger,
   background: linear-gradient(120deg, #3b556d, #2f4457);
 }
 
+.copy-plan-panel {
+  margin-top: 0.55rem;
+}
+
+.copy-plan-panel label {
+  margin-bottom: 0.45rem;
+}
+
+.copy-plan-panel button {
+  background: linear-gradient(120deg, #1e6f77, #1d7f84);
+}
+
 .hidden-file-input {
   position: absolute;
   width: 1px;
@@ -278,6 +290,21 @@ small {
   align-items: start;
 }
 
+.mobile-day-nav {
+  display: none;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+.mobile-day-nav.is-hidden {
+  display: none;
+}
+
+.day-nav-btn {
+  margin-top: 0;
+  background: linear-gradient(120deg, #2f4457, #334a62);
+}
+
 .day {
   border: 1px dashed #b6ccdf;
   border-radius: 14px;
@@ -300,6 +327,27 @@ small {
   border: 1px solid #d1e7f7;
   border-radius: 9px;
   padding: 0.3rem 0.48rem;
+}
+
+.day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.day-head h3 {
+  margin: 0.15rem 0 0.65rem;
+}
+
+.day-delete {
+  width: auto;
+  margin-top: 0;
+  padding: 0.28rem 0.56rem;
+  border-radius: 9px;
+  background: linear-gradient(120deg, #9f2230, #c0392b);
+  font-size: 0.74rem;
+  line-height: 1.1;
 }
 
 .card {
@@ -417,11 +465,17 @@ small {
 
 .card-actions {
   display: flex;
+  justify-content: flex-end;
   gap: 0.4rem;
 }
 
 .card-actions button {
+  width: auto;
   margin-top: 0;
+  padding: 0.28rem 0.6rem;
+  border-radius: 9px;
+  font-size: 0.74rem;
+  line-height: 1.1;
 }
 
 .details {
@@ -520,17 +574,11 @@ small {
   }
 
   .itinerary {
-    grid-template-columns: none;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(280px, 78vw);
-    grid-auto-rows: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 0.7rem;
-    min-width: max-content;
-    align-items: stretch;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 0.2rem;
+    min-width: 0;
+    align-items: start;
+    overflow: visible;
   }
 
   .day {
@@ -538,9 +586,16 @@ small {
     min-width: 0;
   }
 
-  .card-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+  .day.mobile-hidden {
+    display: none;
+  }
+
+  .mobile-day-nav {
+    display: flex;
+  }
+
+  .mobile-day-nav .day-nav-btn {
+    width: 100%;
   }
 
   .field-grid {
@@ -551,7 +606,7 @@ small {
 
 @media (max-width: 640px) {
   .itinerary {
-    grid-auto-columns: minmax(260px, 84vw);
+    grid-template-columns: minmax(0, 1fr);
   }
 
   button,
@@ -580,5 +635,15 @@ small {
 
   .move-row .move-apply {
     width: 100%;
+  }
+
+  .card-actions button,
+  .day-delete {
+    min-height: 32px;
+    padding: 0.24rem 0.48rem;
+  }
+
+  .mobile-day-nav .day-nav-btn {
+    min-height: 42px;
   }
 }
