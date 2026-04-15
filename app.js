@@ -56,9 +56,6 @@ let draggedId = null;
 let supabaseClient = null;
 let hasUnsavedChanges = false;
 let currentPlanKey = DEFAULT_PLAN_KEY;
-let dropTargetEl = null;
-let pendingTouchDrag = null;
-let touchDrag = null;
 
 const typeStyles = {
   Naturaleza: { cls: 'type-naturaleza', label: '🌲 Naturaleza' },
@@ -393,143 +390,6 @@ function moveItemToDay(itemId, targetDayId) {
   markUnsaved();
 }
 
-function clearDropTarget() {
-  if (!dropTargetEl) return;
-  dropTargetEl.classList.remove('drag-over');
-  dropTargetEl = null;
-}
-
-function setDropTarget(target) {
-  if (dropTargetEl === target) return;
-  clearDropTarget();
-  if (!target) return;
-  target.classList.add('drag-over');
-  dropTargetEl = target;
-}
-
-function getDropZoneFromPoint(x, y) {
-  return document.elementFromPoint(x, y)?.closest('.day') || null;
-}
-
-function getDayIdFromDropZone(zone) {
-  if (!zone) return undefined;
-  return zone === unassignedEl ? null : zone.dataset.dayId || null;
-}
-
-function startDrag(itemId, card, className = 'dragging') {
-  draggedId = itemId;
-  card.classList.add(className);
-}
-
-function endDrag(card, className = 'dragging') {
-  draggedId = null;
-  clearDropTarget();
-  if (card?.isConnected) {
-    card.classList.remove(className);
-  }
-}
-
-function isInteractiveTarget(target) {
-  return Boolean(target.closest('button, input, textarea, select, label'));
-}
-
-function cancelPendingTouchDrag() {
-  if (!pendingTouchDrag) return;
-  window.clearTimeout(pendingTouchDrag.timerId);
-  pendingTouchDrag = null;
-}
-
-function updateTouchDragPosition(x, y) {
-  if (!touchDrag) return;
-  touchDrag.card.style.left = `${x - touchDrag.offsetX}px`;
-  touchDrag.card.style.top = `${y - touchDrag.offsetY}px`;
-  setDropTarget(getDropZoneFromPoint(x, y));
-}
-
-function cleanupTouchDrag() {
-  if (!touchDrag) return;
-  const { card } = touchDrag;
-  document.body.classList.remove('touch-dragging-active');
-  if (card?.isConnected) {
-    card.classList.remove('dragging-touch');
-    card.style.removeProperty('width');
-    card.style.removeProperty('left');
-    card.style.removeProperty('top');
-  }
-  touchDrag = null;
-}
-
-function activateTouchDrag() {
-  if (!pendingTouchDrag) return;
-  const { itemId, card, pointerId, latestX, latestY } = pendingTouchDrag;
-  const rect = card.getBoundingClientRect();
-  touchDrag = {
-    itemId,
-    card,
-    pointerId,
-    offsetX: latestX - rect.left,
-    offsetY: latestY - rect.top
-  };
-  cancelPendingTouchDrag();
-  startDrag(itemId, card, 'dragging-touch');
-  card.style.width = `${rect.width}px`;
-  document.body.classList.add('touch-dragging-active');
-  updateTouchDragPosition(latestX, latestY);
-}
-
-function beginTouchDrag(itemId, card, event) {
-  if (isInteractiveTarget(event.target)) return;
-  cancelPendingTouchDrag();
-  pendingTouchDrag = {
-    itemId,
-    card,
-    pointerId: event.pointerId,
-    startX: event.clientX,
-    startY: event.clientY,
-    latestX: event.clientX,
-    latestY: event.clientY,
-    timerId: window.setTimeout(activateTouchDrag, 180)
-  };
-}
-
-function finishTouchDrag() {
-  if (!touchDrag) return;
-  const itemId = touchDrag.itemId;
-  const nextDayId = getDayIdFromDropZone(dropTargetEl);
-  cleanupTouchDrag();
-  draggedId = null;
-  clearDropTarget();
-  if (nextDayId === undefined) return;
-  moveItemToDay(itemId, nextDayId);
-  render();
-}
-
-function handleGlobalPointerMove(event) {
-  if (pendingTouchDrag && event.pointerId === pendingTouchDrag.pointerId) {
-    pendingTouchDrag.latestX = event.clientX;
-    pendingTouchDrag.latestY = event.clientY;
-    const movedX = event.clientX - pendingTouchDrag.startX;
-    const movedY = event.clientY - pendingTouchDrag.startY;
-    if (Math.hypot(movedX, movedY) > 10) {
-      cancelPendingTouchDrag();
-    }
-  }
-
-  if (!touchDrag || event.pointerId !== touchDrag.pointerId) return;
-  event.preventDefault();
-  updateTouchDragPosition(event.clientX, event.clientY);
-}
-
-function handleGlobalPointerEnd(event) {
-  if (pendingTouchDrag && event.pointerId === pendingTouchDrag.pointerId) {
-    cancelPendingTouchDrag();
-  }
-
-  if (!touchDrag || event.pointerId !== touchDrag.pointerId) return;
-  event.preventDefault();
-  finishTouchDrag();
-}
-
 function canUseSupabase() {
   const hasPlaceholders =
     SUPABASE_URL.includes('PEGA_AQUI') || SUPABASE_ANON_KEY.includes('PEGA_AQUI');
@@ -764,16 +624,13 @@ function buildCard(item) {
   });
 
   card.addEventListener('dragstart', () => {
-    startDrag(item.id, card);
+    draggedId = item.id;
+    card.classList.add('dragging');
   });
 
   card.addEventListener('dragend', () => {
-    endDrag(card);
-  });
-
-  card.addEventListener('pointerdown', (event) => {
-    if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return;
-    beginTouchDrag(item.id, card, event);
+    draggedId = null;
+    card.classList.remove('dragging');
   });
 
   renderQuickMarks();
@@ -788,14 +645,13 @@ function buildDayColumn(day) {
 
   col.addEventListener('dragover', (event) => {
     event.preventDefault();
-    setDropTarget(col);
+    col.classList.add('drag-over');
   });
 
-  col.addEventListener('dragleave', () => {
-    if (dropTargetEl === col) clearDropTarget();
-  });
+  col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
 
   col.addEventListener('drop', () => {
+    col.classList.remove('drag-over');
     if (!draggedId) return;
     moveItemToDay(draggedId, day.id);
     render();
@@ -818,18 +674,16 @@ function updateStats() {
 function render() {
   itineraryEl.innerHTML = '';
   unassignedEl.innerHTML = '';
-  clearDropTarget();
 
   unassignedEl.ondragover = (event) => {
     event.preventDefault();
-    setDropTarget(unassignedEl);
+    unassignedEl.classList.add('drag-over');
   };
 
-  unassignedEl.ondragleave = () => {
-    if (dropTargetEl === unassignedEl) clearDropTarget();
-  };
+  unassignedEl.ondragleave = () => unassignedEl.classList.remove('drag-over');
 
   unassignedEl.ondrop = () => {
+    unassignedEl.classList.remove('drag-over');
     if (!draggedId) return;
     moveItemToDay(draggedId, null);
     render();
@@ -1023,10 +877,6 @@ importJsonInput.addEventListener('change', async () => {
     importJsonInput.value = '';
   }
 });
-
-window.addEventListener('pointermove', handleGlobalPointerMove, { passive: false });
-window.addEventListener('pointerup', handleGlobalPointerEnd, { passive: false });
-window.addEventListener('pointercancel', handleGlobalPointerEnd, { passive: false });
 
 async function init() {
   updateEntryKindUI();
