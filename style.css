@@ -516,16 +516,20 @@ small {
   }
 
   .itinerary-wrapper {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    overflow: hidden;
   }
 
   .itinerary {
+    grid-template-columns: none;
     grid-auto-flow: column;
     grid-auto-columns: minmax(280px, 78vw);
+    grid-auto-rows: 1fr;
     gap: 0.7rem;
     min-width: max-content;
     align-items: stretch;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
     padding-bottom: 0.2rem;
   }
 
