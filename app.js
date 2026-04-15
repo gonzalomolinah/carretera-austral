@@ -646,8 +646,11 @@ function buildCard(item) {
   });
 
   editBtn.addEventListener('click', () => {
-    details.classList.toggle('hidden');
-    editBtn.textContent = details.classList.contains('hidden') ? 'Editar' : 'Cerrar';
+    const isNowHidden = details.classList.toggle('hidden');
+    editBtn.classList.toggle('is-open', !isNowHidden);
+    editBtn.textContent = isNowHidden ? '✎' : '✕';
+    editBtn.setAttribute('aria-label', isNowHidden ? 'Editar' : 'Cerrar');
+    editBtn.setAttribute('title', isNowHidden ? 'Editar' : 'Cerrar');
   });
 
   card.querySelector('.delete').addEventListener('click', () => {
