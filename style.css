@@ -123,6 +123,12 @@ main {
   font-weight: 600;
 }
 
+.stats span[data-level='warning'] {
+  background: #fff8df;
+  border-color: #f0d48a;
+  color: #7e5d15;
+}
+
 label {
   display: block;
   margin-bottom: 0.7rem;
@@ -155,6 +161,10 @@ textarea {
   grid-template-columns: 1fr 1fr;
 }
 
+.optional-fields {
+  margin-bottom: 0.1rem;
+}
+
 input:focus,
 select:focus,
 textarea:focus {
@@ -179,6 +189,10 @@ button:hover {
 button.danger,
 .delete {
   background: linear-gradient(120deg, #c0392b, #9f2230);
+}
+
+button.secondary {
+  background: linear-gradient(120deg, #3b556d, #2f4457);
 }
 
 .edit {
@@ -265,6 +279,12 @@ button.danger,
   color: #7e5d15;
 }
 
+.sync-status[data-level='conflict'] {
+  border-color: #efad76;
+  background: #fff4e8;
+  color: #8a4b10;
+}
+
 small {
   color: var(--muted);
 }
@@ -288,6 +308,23 @@ small {
   grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
   gap: 0.9rem;
   align-items: start;
+}
+
+.itinerary-tools {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 170px auto;
+  gap: 0.6rem;
+  align-items: end;
+  margin: 0.45rem 0 0.8rem;
+}
+
+.itinerary-tools label {
+  margin: 0;
+}
+
+.itinerary-tools button {
+  width: auto;
+  min-width: 86px;
 }
 
 .mobile-day-nav {
@@ -319,25 +356,24 @@ small {
   box-shadow: inset 0 0 0 2px rgba(62, 142, 192, 0.15);
 }
 
-.day h3 {
-  margin: 0.15rem 0 0.65rem;
-  font-size: 0.98rem;
-  color: #0f4f75;
-  background: #e9f4ff;
-  border: 1px solid #d1e7f7;
-  border-radius: 9px;
-  padding: 0.3rem 0.48rem;
-}
-
 .day-head {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 0.5rem;
+  margin-bottom: 0.45rem;
 }
 
-.day-head h3 {
-  margin: 0.15rem 0 0.65rem;
+.day-title-input {
+  margin: 0;
+  min-width: 0;
+  padding: 0.34rem 0.5rem;
+  border-radius: 9px;
+  background: #e9f4ff;
+  border-color: #d1e7f7;
+  color: #0f4f75;
+  font-weight: 700;
+  font-size: 0.98rem;
 }
 
 .day-delete {
@@ -348,6 +384,23 @@ small {
   background: linear-gradient(120deg, #9f2230, #c0392b);
   font-size: 0.74rem;
   line-height: 1.1;
+}
+
+.day-summary {
+  margin-bottom: 0.55rem;
+  padding: 0.25rem 0.46rem;
+  border-radius: 9px;
+  background: #edf7f3;
+  color: #1f6e3a;
+  border: 1px solid #cdebd9;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.day-summary.is-heavy {
+  background: #fff8df;
+  color: #7e5d15;
+  border-color: #f0d48a;
 }
 
 .card {
@@ -392,6 +445,11 @@ small {
 .card.dragging {
   opacity: 0.7;
   transform: rotate(1deg) scale(0.99);
+}
+
+.card.drop-before {
+  border-top-color: #0e7490;
+  box-shadow: 0 -3px 0 #0e7490, 0 10px 18px rgba(15, 23, 42, 0.1);
 }
 
 .card-head {
@@ -463,6 +521,27 @@ small {
   padding: 0.12rem 0.45rem;
 }
 
+.link-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.1rem 0 0.5rem;
+}
+
+.link-actions a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.7rem;
+  padding: 0.18rem 0.48rem;
+  border-radius: 999px;
+  background: #e7f3ff;
+  border: 1px solid #cfe2f5;
+  color: #0f4f75;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
 .card-actions {
   display: flex;
   justify-content: flex-end;
@@ -515,6 +594,19 @@ small {
   white-space: nowrap;
 }
 
+.link-edit-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.42rem;
+  margin-bottom: 0.5rem;
+}
+
+.link-edit-grid label {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #334155;
+}
+
 .hidden {
   display: none;
 }
@@ -546,6 +638,17 @@ small {
 
 .delete {
   margin-top: 0;
+}
+
+.empty-state {
+  margin: 0.2rem 0 0;
+  padding: 0.55rem;
+  border-radius: 10px;
+  background: #eef3f7;
+  border: 1px dashed #c8d5df;
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 600;
 }
 
 @keyframes fadeIn {
@@ -589,6 +692,15 @@ small {
     overflow: visible;
   }
 
+  .itinerary-tools {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .itinerary-tools button {
+    width: 100%;
+    grid-column: 1 / -1;
+  }
+
   .day {
     min-height: 170px;
     min-width: 0;
@@ -609,6 +721,10 @@ small {
   .field-grid {
     grid-template-columns: 1fr;
     gap: 0;
+  }
+
+  .link-edit-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -639,6 +755,14 @@ small {
 
   .move-row {
     grid-template-columns: 1fr;
+  }
+
+  .day-head {
+    grid-template-columns: 1fr;
+  }
+
+  .day-delete {
+    width: 100%;
   }
 
   .move-row .move-apply {

@@ -9,12 +9,15 @@ Base inicial incluida: itinerario referencial de **12 días partiendo desde Puer
 - Agregar atracciones/paradas personalizadas
 - Organizar por día
 - Mover lugares con drag & drop entre días
+- Buscar, filtrar y ver carga estimada por día
 - Marcar cada parada con estados:
   - Imprescindible
   - Reservado
   - Completado
 - Notas por parada
+- Enlaces opcionales de mapa y reserva
 - Persistencia local en navegador (`localStorage`)
+- Autosave remoto con detección de conflictos usando `updated_at`
 
 ## Uso rápido
 
@@ -47,7 +50,7 @@ con los valores de tu proyecto (Project Settings > API).
 
 1. Abre `index.html`.
 2. Crea/edita/mueve paradas.
-3. Presiona `Guardar planificación` (también hay autosave).
+3. Presiona `Guardar planificación` si quieres forzar el guardado; también hay autosave.
 4. Recarga la pagina en otro navegador/usuario: se verá el nuevo estado desde Supabase.
 
 Si no configuras las credenciales, la app sigue funcionando con `localStorage` como respaldo.
@@ -59,3 +62,5 @@ Si no configuras las credenciales, la app sigue funcionando con `localStorage` c
 - `app.js` lógica de estado e interacción
 - `supabase/schema.sql` estructura y seguridad mínima de la tabla
 - `supabase/seed.sql` estado inicial del itinerario
+
+La base se mantiene simple: cada planificación sigue guardándose como un único `state_json` en `planner_state`.

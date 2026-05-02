@@ -81,6 +81,15 @@
           </label>
         </div>
 
+        <div class="field-grid optional-fields">
+          <label>Mapa
+            <input id="mapUrl" type="url" placeholder="https://maps.google.com/..." />
+          </label>
+          <label>Reserva
+            <input id="reservationUrl" type="url" placeholder="https://..." />
+          </label>
+        </div>
+
         <label>Día
           <select id="daySelect"></select>
         </label>
@@ -121,7 +130,28 @@
           <span id="statStops">0 paradas</span>
           <span id="statHours">0h</span>
           <span id="statDone">0 completadas</span>
+          <span id="statWarnings">Sin sobrecarga</span>
         </div>
+      </div>
+      <div class="itinerary-tools">
+        <label>Buscar
+          <input id="searchInput" type="search" placeholder="Lugar, nota, ruta..." />
+        </label>
+        <label>Filtro
+          <select id="filterSelect">
+            <option value="all">Todo</option>
+            <option value="must">Imprescindibles</option>
+            <option value="booked">Reservado</option>
+            <option value="done">Completado</option>
+            <option value="pending">Pendiente</option>
+            <option value="lodging">Alojamiento</option>
+            <option value="dayvisit">Visita por el día</option>
+            <option value="trip">Viajes</option>
+            <option value="place">Lugares</option>
+            <option value="unassigned">Sin asignar</option>
+          </select>
+        </label>
+        <button id="clearFiltersBtn" type="button" class="secondary">Limpiar</button>
       </div>
       <div id="itinerary" class="itinerary"></div>
       <div id="mobileDayNav" class="mobile-day-nav" aria-label="Navegación por día">
@@ -139,7 +169,9 @@
       </div>
       <p class="meta"></p>
       <div class="quick-marks"></div>
+      <div class="link-actions"></div>
       <div class="card-actions">
+        <button type="button" class="duplicate icon-btn" aria-label="Duplicar" title="Duplicar">⧉</button>
         <button type="button" class="edit icon-btn" aria-label="Editar" title="Editar">✎</button>
         <button type="button" class="delete icon-btn" aria-label="Eliminar" title="Eliminar">🗑</button>
       </div>
@@ -149,6 +181,14 @@
             <select class="move-day"></select>
           </label>
           <button type="button" class="move-apply">Mover</button>
+        </div>
+        <div class="link-edit-grid">
+          <label>Mapa
+            <input class="map-url" type="url" placeholder="https://maps.google.com/..." />
+          </label>
+          <label>Reserva
+            <input class="reservation-url" type="url" placeholder="https://..." />
+          </label>
         </div>
         <div class="marks">
           <label><input type="checkbox" data-mark="must" /> Imprescindible</label>

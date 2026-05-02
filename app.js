@@ -3,6 +3,10 @@ const SUPABASE_URL = 'https://cioggccobgnglprrvfpk.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_v_qzelV5YofpbQWaxf4wIw_mhKt-WOh';
 const SUPABASE_TABLE = 'planner_state';
 const SUPABASE_PLAN_PREFIX = 'carretera-austral-';
+const STATE_SCHEMA_VERSION = 2;
+const AUTO_SAVE_DELAY_MS = 1400;
+const DAILY_HOURS_WARNING = 9;
+const REMOTE_CONFLICT_CODE = 'REMOTE_CONFLICT';
 
 const PLAN_OPTIONS = [
   { key: 'general', label: 'General' },
@@ -40,12 +44,14 @@ const defaultItems = [
 ];
 
 const defaultData = {
+  schemaVersion: STATE_SCHEMA_VERSION,
   days: defaultDays,
   items: defaultItems
 };
 
 function createEmptyPlanData() {
   return {
+    schemaVersion: STATE_SCHEMA_VERSION,
     days: structuredClone(defaultDays),
     items: []
   };
@@ -57,6 +63,13 @@ let supabaseClient = null;
 let hasUnsavedChanges = false;
 let currentPlanKey = DEFAULT_PLAN_KEY;
 let mobileDayIndex = 0;
+let lastRemoteUpdatedAt = null;
+let autoSaveTimer = null;
+let isSaving = false;
+let changeSerial = 0;
+let pendingConflict = null;
+let activeFilter = 'all';
+let searchTerm = '';
 
 const typeStyles = {
   Naturaleza: { cls: 'type-naturaleza', label: '🌲 Naturaleza' },
@@ -84,6 +97,7 @@ const cardTemplate = document.getElementById('cardTemplate');
 const statStopsEl = document.getElementById('statStops');
 const statHoursEl = document.getElementById('statHours');
 const statDoneEl = document.getElementById('statDone');
+const statWarningsEl = document.getElementById('statWarnings');
 const saveBtn = document.getElementById('saveBtn');
 const syncStatusEl = document.getElementById('syncStatus');
 const planSelectEl = document.getElementById('planSelect');
@@ -99,6 +113,8 @@ const tripStartEl = document.getElementById('tripStart');
 const tripEndEl = document.getElementById('tripEnd');
 const tripModeEl = document.getElementById('tripMode');
 const tripDurationEl = document.getElementById('tripDuration');
+const mapUrlEl = document.getElementById('mapUrl');
+const reservationUrlEl = document.getElementById('reservationUrl');
 
 const addDayBtn = document.getElementById('addDayBtn');
 const resetBtn = document.getElementById('resetBtn');
@@ -110,6 +126,9 @@ const copyPlanBtn = document.getElementById('copyPlanBtn');
 const mobileDayNavEl = document.getElementById('mobileDayNav');
 const prevDayBtn = document.getElementById('prevDayBtn');
 const nextDayBtn = document.getElementById('nextDayBtn');
+const searchInputEl = document.getElementById('searchInput');
+const filterSelectEl = document.getElementById('filterSelect');
+const clearFiltersBtn = document.getElementById('clearFiltersBtn');
 const mobileViewportQuery = window.matchMedia('(max-width: 900px)');
 
 const syncTimeFormatter = new Intl.DateTimeFormat('es-CL', {
@@ -177,6 +196,43 @@ function normalizeType(typeValue) {
   return typeStyles[normalized] ? normalized : 'Logística';
 }
 
+function normalizeKind(kindValue, normalizedType) {
+  if (kindValue === 'place' || kindValue === 'trip') return kindValue;
+  return normalizedType === 'Traslado' || normalizedType === 'Ferry' ? 'trip' : 'place';
+}
+
+function limitText(value, maxLength = 160) {
+  if (typeof value !== 'string') return '';
+  return value.trim().slice(0, maxLength);
+}
+
+function sanitizeUrl(value) {
+  const rawUrl = limitText(value, 2048);
+  if (!rawUrl) return '';
+
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : '';
+  } catch {
+    return '';
+  }
+}
+
+function parseRouteParts(source) {
+  const routeText = limitText(source, 220);
+  if (!routeText) return { start: '', end: '' };
+
+  const arrowParts = routeText.split(/\s*(?:->|→)\s*/);
+  if (arrowParts.length >= 2) {
+    return {
+      start: limitText(arrowParts[0], 80),
+      end: limitText(arrowParts.slice(1).join(' -> '), 80)
+    };
+  }
+
+  return { start: '', end: '' };
+}
+
 function sanitizeMarks(marks) {
   const source = marks && typeof marks === 'object' ? marks : {};
   return {
@@ -206,8 +262,8 @@ function sanitizeState(rawState) {
     if (daySeen.has(id)) id = `${id}-${crypto.randomUUID().slice(0, 6)}`;
     daySeen.add(id);
 
-    const name = typeof source.name === 'string' && source.name.trim()
-      ? source.name.trim()
+    const name = limitText(source.name, 48)
+      ? limitText(source.name, 48)
       : `Día ${index + 1}`;
 
     return { id, name };
@@ -228,8 +284,18 @@ function sanitizeState(rawState) {
     const parsedDuration = Number(source.duration);
     const duration = Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : 1;
 
-    const name = typeof source.name === 'string' ? source.name.trim() : '';
-    const location = typeof source.location === 'string' ? source.location.trim() : '';
+    const fallbackType = typeof source.type === 'string' ? source.type : '';
+    const normalizedType = normalizeType(source.transportMode || source.mode || fallbackType);
+    const kind = normalizeKind(source.kind, normalizedType);
+    const routeParts = parseRouteParts(source.location || source.name);
+    const start = limitText(source.start || routeParts.start, 80);
+    const end = limitText(source.end || routeParts.end, 80);
+    const routeLocation = start && end ? `${start} -> ${end}` : '';
+    const rawLocation = limitText(source.location, 140);
+    const location = kind === 'trip' ? (routeLocation || rawLocation) : rawLocation;
+    const rawName = limitText(source.name, 140);
+    const type = kind === 'trip' ? normalizeType(normalizedType) : normalizeType(fallbackType);
+    const name = rawName || (kind === 'trip' && location ? `Viaje ${location}` : '');
 
     return {
       id,
@@ -237,14 +303,19 @@ function sanitizeState(rawState) {
       order: Number.isFinite(source.order) ? source.order : index,
       name: name || 'Parada sin nombre',
       location,
-      type: normalizeType(typeof source.type === 'string' ? source.type : ''),
+      type,
+      kind,
+      start: kind === 'trip' ? start : '',
+      end: kind === 'trip' ? end : '',
+      mapUrl: sanitizeUrl(source.mapUrl),
+      reservationUrl: sanitizeUrl(source.reservationUrl || source.bookingUrl),
       duration,
       marks: sanitizeMarks(source.marks),
-      notes: typeof source.notes === 'string' ? source.notes : ''
+      notes: limitText(source.notes, 1200)
     };
   });
 
-  return { days, items };
+  return { schemaVersion: STATE_SCHEMA_VERSION, days, items };
 }
 
 function parseLocalStore(rawText) {
@@ -367,6 +438,52 @@ function getItemsForDay(dayValue) {
     });
 }
 
+function hasActiveViewFilter() {
+  return activeFilter !== 'all' || searchTerm.trim().length > 0;
+}
+
+function getItemSearchText(item) {
+  return [
+    item.name,
+    item.location,
+    item.type,
+    item.kind,
+    item.start,
+    item.end,
+    item.notes
+  ].filter(Boolean).join(' ').toLocaleLowerCase('es-CL');
+}
+
+function itemMatchesView(item) {
+  if (activeFilter === 'must' && !item.marks?.must) return false;
+  if (activeFilter === 'booked' && !item.marks?.booked) return false;
+  if (activeFilter === 'done' && !item.marks?.done) return false;
+  if (activeFilter === 'pending' && item.marks?.done) return false;
+  if (activeFilter === 'lodging' && !item.marks?.lodging) return false;
+  if (activeFilter === 'dayvisit' && !item.marks?.dayvisit) return false;
+  if (activeFilter === 'trip' && item.kind !== 'trip') return false;
+  if (activeFilter === 'place' && item.kind !== 'place') return false;
+  if (activeFilter === 'unassigned' && item.dayId) return false;
+
+  const normalizedSearch = searchTerm.trim().toLocaleLowerCase('es-CL');
+  return !normalizedSearch || getItemSearchText(item).includes(normalizedSearch);
+}
+
+function getVisibleItemsForDay(dayValue) {
+  return getItemsForDay(dayValue).filter(itemMatchesView);
+}
+
+function getDaySummary(dayValue) {
+  const items = getItemsForDay(dayValue);
+  return {
+    total: items.length,
+    visible: items.filter(itemMatchesView).length,
+    hours: items.reduce((sum, item) => sum + Number(item.duration || 0), 0),
+    done: items.filter((item) => item.marks?.done).length,
+    lodging: items.filter((item) => item.marks?.lodging).length
+  };
+}
+
 function getNextOrderForDay(dayValue, excludedId = null) {
   let maxOrder = -1;
   state.items.forEach((item) => {
@@ -385,8 +502,26 @@ function normalizeState() {
     if (!item.marks) {
       item.marks = { must: false, booked: false, done: false, lodging: false, dayvisit: false };
     }
+    item.name = limitText(item.name, 140) || 'Parada sin nombre';
+    item.location = limitText(item.location, 140);
+    const parsedDuration = Number(item.duration);
+    item.duration = Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : 1;
     if (typeof item.notes !== 'string') item.notes = '';
     item.type = normalizeType(item.type);
+    item.kind = normalizeKind(item.kind, item.type);
+    item.mapUrl = sanitizeUrl(item.mapUrl);
+    item.reservationUrl = sanitizeUrl(item.reservationUrl);
+
+    if (item.kind === 'trip') {
+      const routeParts = parseRouteParts(item.location || item.name);
+      item.start = limitText(item.start || routeParts.start, 80);
+      item.end = limitText(item.end || routeParts.end, 80);
+      if (item.start && item.end) item.location = `${item.start} -> ${item.end}`;
+      if (item.type !== 'Ferry') item.type = 'Traslado';
+    } else {
+      item.start = '';
+      item.end = '';
+    }
 
     const key = getOrderKey(item.dayId);
     if (!groups.has(key)) groups.set(key, []);
@@ -405,20 +540,82 @@ function normalizeState() {
       entry.item.order = idx;
     });
   });
+
+  state.schemaVersion = STATE_SCHEMA_VERSION;
 }
 
 function markUnsaved() {
   normalizeState();
+  changeSerial += 1;
   hasUnsavedChanges = true;
-  updateSyncStatus(`Hay cambios sin guardar en "${getPlanLabel(currentPlanKey)}". Presiona "Guardar planificación".`, 'pending');
+  persistLocalPlanState(currentPlanKey, structuredClone(state));
+
+  if (pendingConflict) {
+    updateSyncStatus('Hay un conflicto remoto pendiente. Tus cambios están guardados localmente.', 'conflict');
+    return;
+  }
+
+  if (supabaseClient) {
+    updateSyncStatus(`Cambios guardados localmente. Autosave remoto pendiente en "${getPlanLabel(currentPlanKey)}".`, 'pending');
+    scheduleAutoSave();
+  } else {
+    updateSyncStatus(`Planificación "${getPlanLabel(currentPlanKey)}" guardada localmente.`, 'local');
+  }
 }
 
 function moveItemToDay(itemId, targetDayId) {
+  moveItemToDayAt(itemId, targetDayId, getNextOrderForDay(targetDayId, itemId));
+}
+
+function moveItemToDayAt(itemId, targetDayId, targetIndex) {
   const item = state.items.find((x) => x.id === itemId);
   if (!item) return;
-  item.dayId = targetDayId;
-  item.order = getNextOrderForDay(targetDayId, itemId);
+
+  const sourceDayId = item.dayId || null;
+  const normalizedTargetDayId = targetDayId || null;
+  const targetItems = getItemsForDay(normalizedTargetDayId).filter((entry) => entry.id !== itemId);
+  const insertIndex = Math.min(Math.max(Number(targetIndex) || 0, 0), targetItems.length);
+
+  item.dayId = normalizedTargetDayId;
+  targetItems.splice(insertIndex, 0, item);
+  targetItems.forEach((entry, index) => {
+    entry.order = index;
+  });
+
+  if (sourceDayId !== normalizedTargetDayId) {
+    getItemsForDay(sourceDayId).forEach((entry, index) => {
+      entry.order = index;
+    });
+  }
+
   markUnsaved();
+}
+
+function duplicateItem(itemId) {
+  const item = state.items.find((entry) => entry.id === itemId);
+  if (!item) return;
+
+  const copy = structuredClone(item);
+  copy.id = crypto.randomUUID();
+  copy.name = `${copy.name} copia`;
+  copy.order = getNextOrderForDay(copy.dayId);
+  state.items.push(copy);
+  markUnsaved();
+}
+
+function renameDay(dayId, nextName) {
+  const day = state.days.find((entry) => entry.id === dayId);
+  if (!day) return;
+
+  const safeName = limitText(nextName, 48) || day.name;
+  if (safeName === day.name) {
+    render();
+    return;
+  }
+
+  day.name = safeName;
+  markUnsaved();
+  render();
 }
 
 function canUseSupabase() {
@@ -432,59 +629,214 @@ function initSupabase() {
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 }
 
+function clearAutoSaveTimer() {
+  if (!autoSaveTimer) return;
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = null;
+}
+
+function scheduleAutoSave(delay = AUTO_SAVE_DELAY_MS) {
+  if (!supabaseClient || pendingConflict) return;
+
+  const scheduledPlanKey = currentPlanKey;
+  clearAutoSaveTimer();
+  autoSaveTimer = window.setTimeout(async () => {
+    autoSaveTimer = null;
+    if (!hasUnsavedChanges || currentPlanKey !== scheduledPlanKey) return;
+
+    try {
+      await saveCurrentState({ source: 'auto' });
+    } catch (error) {
+      console.error('Autosave falló:', error.message);
+      updateSyncStatus('Autosave remoto falló. Tus cambios quedan guardados localmente.', 'error');
+    }
+  }, delay);
+}
+
+function createRemoteConflictError() {
+  const error = new Error('La planificación remota cambió desde la última carga.');
+  error.code = REMOTE_CONFLICT_CODE;
+  return error;
+}
+
+function isRemoteConflictError(error) {
+  return error?.code === REMOTE_CONFLICT_CODE;
+}
+
 async function loadRemoteState(planKey) {
   const rowId = getPlanRowId(planKey);
 
   const { data, error } = await supabaseClient
     .from(SUPABASE_TABLE)
-    .select('state_json')
+    .select('state_json, updated_at')
     .eq('id', rowId)
     .maybeSingle();
 
   if (error) throw error;
-  if (data?.state_json) return sanitizeState(data.state_json);
+  if (data?.state_json) {
+    return {
+      state: sanitizeState(data.state_json),
+      updatedAt: data.updated_at || null
+    };
+  }
 
   const emptyPlan = createEmptyPlanData();
-  await saveRemoteState(planKey, emptyPlan);
-  return emptyPlan;
+  const saved = await saveRemoteState(planKey, emptyPlan);
+  return {
+    state: emptyPlan,
+    updatedAt: saved.updatedAt
+  };
 }
 
-async function saveRemoteState(planKey, nextState) {
+async function saveRemoteState(planKey, nextState, options = {}) {
+  const { expectedUpdatedAt = null } = options;
   const payload = {
-    id: getPlanRowId(planKey),
     state_json: nextState,
     updated_at: new Date().toISOString()
   };
+  const rowId = getPlanRowId(planKey);
 
-  const { error } = await supabaseClient
+  if (expectedUpdatedAt) {
+    const { data, error } = await supabaseClient
+      .from(SUPABASE_TABLE)
+      .update(payload)
+      .eq('id', rowId)
+      .eq('updated_at', expectedUpdatedAt)
+      .select('updated_at')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) throw createRemoteConflictError();
+
+    return { updatedAt: data.updated_at || payload.updated_at };
+  }
+
+  const { data, error } = await supabaseClient
     .from(SUPABASE_TABLE)
-    .upsert(payload, { onConflict: 'id' });
+    .upsert({ id: rowId, ...payload }, { onConflict: 'id' })
+    .select('updated_at')
+    .single();
 
   if (error) {
     throw error;
   }
+
+  return { updatedAt: data?.updated_at || payload.updated_at };
 }
 
-async function saveCurrentState() {
-  normalizeState();
-  const snapshot = structuredClone(state);
-  persistLocalPlanState(currentPlanKey, snapshot);
+async function fetchRemotePlan(planKey) {
+  const { data, error } = await supabaseClient
+    .from(SUPABASE_TABLE)
+    .select('state_json, updated_at')
+    .eq('id', getPlanRowId(planKey))
+    .maybeSingle();
 
-  if (!supabaseClient) {
+  if (error) throw error;
+  return data
+    ? { state: data.state_json ? sanitizeState(data.state_json) : null, updatedAt: data.updated_at || null }
+    : { state: null, updatedAt: null };
+}
+
+async function handleRemoteConflict(localSnapshot) {
+  let remotePlan = { state: null, updatedAt: null };
+
+  try {
+    remotePlan = await fetchRemotePlan(currentPlanKey);
+  } catch (error) {
+    console.error('No se pudo leer la versión remota en conflicto:', error.message);
+  }
+
+  pendingConflict = {
+    localSnapshot,
+    remoteUpdatedAt: remotePlan.updatedAt
+  };
+  if (remotePlan.updatedAt) lastRemoteUpdatedAt = remotePlan.updatedAt;
+  hasUnsavedChanges = true;
+  persistLocalPlanState(currentPlanKey, localSnapshot);
+
+  const shouldLoadRemote = remotePlan.state && window.confirm(
+    'La planificación cambió en otro navegador. Acepta para cargar la versión remota; cancela para mantener tus cambios locales y decidir después.'
+  );
+
+  if (shouldLoadRemote) {
+    pendingConflict = null;
+    state = remotePlan.state;
     hasUnsavedChanges = false;
-    updateSyncStatus(`Planificación "${getPlanLabel(currentPlanKey)}" guardada localmente.`, 'local');
+    persistLocalPlanState(currentPlanKey, state);
+    normalizeState();
+    render();
+    updateSyncStatus('Se cargó la versión remota más reciente.', 'saved');
     return;
   }
 
+  updateSyncStatus('Conflicto remoto detectado. Tus cambios siguen guardados localmente; Guardar otra vez permite sobrescribir si confirmas.', 'conflict');
+}
+
+async function saveCurrentState(options = {}) {
+  const { source = 'manual' } = options;
+  clearAutoSaveTimer();
+
+  if (isSaving) {
+    scheduleAutoSave(400);
+    return false;
+  }
+
+  if (pendingConflict) {
+    if (source === 'auto') return false;
+
+    const shouldOverwrite = window.confirm(
+      'Hay una versión más nueva en la base. ¿Quieres sobrescribirla con tus cambios locales?'
+    );
+
+    if (!shouldOverwrite) {
+      updateSyncStatus('Se mantiene el conflicto pendiente. Tus cambios están guardados localmente.', 'conflict');
+      return false;
+    }
+
+    lastRemoteUpdatedAt = pendingConflict.remoteUpdatedAt || lastRemoteUpdatedAt;
+    pendingConflict = null;
+  }
+
+  normalizeState();
+  const snapshot = sanitizeState(structuredClone(state));
+  const saveSerial = changeSerial;
+  persistLocalPlanState(currentPlanKey, snapshot);
+
+  if (!supabaseClient) {
+    hasUnsavedChanges = changeSerial !== saveSerial;
+    updateSyncStatus(`Planificación "${getPlanLabel(currentPlanKey)}" guardada localmente.`, 'local');
+    return true;
+  }
+
+  isSaving = true;
   setSaveButtonBusy(true);
-  updateSyncStatus(`Guardando "${getPlanLabel(currentPlanKey)}" en la base...`, 'saving');
+  updateSyncStatus(
+    source === 'auto'
+      ? `Autosave remoto de "${getPlanLabel(currentPlanKey)}"...`
+      : `Guardando "${getPlanLabel(currentPlanKey)}" en la base...`,
+    'saving'
+  );
 
   try {
-    await saveRemoteState(currentPlanKey, snapshot);
-    hasUnsavedChanges = false;
+    const saved = await saveRemoteState(currentPlanKey, snapshot, { expectedUpdatedAt: lastRemoteUpdatedAt });
+    lastRemoteUpdatedAt = saved.updatedAt || lastRemoteUpdatedAt;
+    hasUnsavedChanges = changeSerial !== saveSerial;
     const syncTime = syncTimeFormatter.format(new Date());
-    updateSyncStatus(`Planificación "${getPlanLabel(currentPlanKey)}" guardada a las ${syncTime}.`, 'saved');
+    if (hasUnsavedChanges) {
+      updateSyncStatus(`Cambios nuevos detectados mientras se guardaba. Autosave reprogramado.`, 'pending');
+      scheduleAutoSave();
+    } else {
+      updateSyncStatus(`Planificación "${getPlanLabel(currentPlanKey)}" guardada a las ${syncTime}.`, 'saved');
+    }
+    return true;
+  } catch (error) {
+    if (isRemoteConflictError(error)) {
+      await handleRemoteConflict(snapshot);
+      return false;
+    }
+    throw error;
   } finally {
+    isSaving = false;
     setSaveButtonBusy(false);
   }
 }
@@ -510,19 +862,25 @@ async function switchToPlan(nextPlanKey, options = {}) {
     }
   }
 
+  clearAutoSaveTimer();
+  pendingConflict = null;
   setPlanSelectBusy(true);
   updateSyncStatus(`Cargando planificación "${getPlanLabel(nextPlanKey)}"...`, 'saving');
 
   try {
     let nextState;
+    let remoteUpdatedAt = null;
 
     if (supabaseClient) {
       try {
-        nextState = await loadRemoteState(nextPlanKey);
+        const remotePlan = await loadRemoteState(nextPlanKey);
+        nextState = remotePlan.state;
+        remoteUpdatedAt = remotePlan.updatedAt;
         updateSyncStatus(`Planificación "${getPlanLabel(nextPlanKey)}" cargada desde la base de datos.`, 'saved');
       } catch (error) {
         console.error(`No se pudo cargar ${nextPlanKey} desde Supabase:`, error.message);
         nextState = getLocalPlanState(nextPlanKey);
+        remoteUpdatedAt = null;
         updateSyncStatus(`No se pudo leer "${getPlanLabel(nextPlanKey)}" desde Supabase. Se cargó respaldo local.`, 'error');
       }
     } else {
@@ -533,6 +891,7 @@ async function switchToPlan(nextPlanKey, options = {}) {
     state = sanitizeState(nextState);
     currentPlanKey = nextPlanKey;
     mobileDayIndex = 0;
+    lastRemoteUpdatedAt = remoteUpdatedAt;
     hasUnsavedChanges = false;
     persistLocalPlanState(currentPlanKey, state);
     normalizeState();
@@ -569,10 +928,11 @@ function buildCard(item) {
     card.draggable = false;
   }
 
-  const isTransport = item.type === 'Traslado' || item.type === 'Ferry';
+  const isTransport = item.kind === 'trip' || item.type === 'Traslado' || item.type === 'Ferry';
   const titleEl = card.querySelector('.title');
   const metaEl = card.querySelector('.meta');
   const quickMarksEl = card.querySelector('.quick-marks');
+  const linkActionsEl = card.querySelector('.link-actions');
 
   if (isTransport) {
     card.classList.add('card-transport');
@@ -606,6 +966,27 @@ function buildCard(item) {
     }
   };
 
+  const renderCardLinks = () => {
+    linkActionsEl.innerHTML = '';
+
+    [
+      { url: item.mapUrl, label: 'Mapa' },
+      { url: item.reservationUrl, label: 'Reserva' }
+    ].forEach((link) => {
+      const safeUrl = sanitizeUrl(link.url);
+      if (!safeUrl) return;
+
+      const anchor = document.createElement('a');
+      anchor.href = safeUrl;
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      anchor.textContent = link.label;
+      linkActionsEl.appendChild(anchor);
+    });
+
+    linkActionsEl.classList.toggle('hidden', linkActionsEl.childElementCount === 0);
+  };
+
   card.querySelectorAll('[data-mark]').forEach((checkbox) => {
     const key = checkbox.dataset.mark;
     checkbox.checked = Boolean(item.marks[key]);
@@ -627,6 +1008,8 @@ function buildCard(item) {
   const moveDaySelect = card.querySelector('.move-day');
   const moveApplyBtn = card.querySelector('.move-apply');
   const editBtn = card.querySelector('.edit');
+  const mapUrlInput = card.querySelector('.map-url');
+  const reservationUrlInput = card.querySelector('.reservation-url');
 
   moveDaySelect.innerHTML = '<option value="">Sin asignar</option>';
   state.days.forEach((day) => {
@@ -645,6 +1028,20 @@ function buildCard(item) {
     render();
   });
 
+  mapUrlInput.value = item.mapUrl || '';
+  mapUrlInput.addEventListener('change', () => {
+    item.mapUrl = mapUrlInput.value.trim();
+    renderCardLinks();
+    markUnsaved();
+  });
+
+  reservationUrlInput.value = item.reservationUrl || '';
+  reservationUrlInput.addEventListener('change', () => {
+    item.reservationUrl = reservationUrlInput.value.trim();
+    renderCardLinks();
+    markUnsaved();
+  });
+
   editBtn.addEventListener('click', () => {
     const isNowHidden = details.classList.toggle('hidden');
     editBtn.classList.toggle('is-open', !isNowHidden);
@@ -653,7 +1050,14 @@ function buildCard(item) {
     editBtn.setAttribute('title', isNowHidden ? 'Editar' : 'Cerrar');
   });
 
+  card.querySelector('.duplicate').addEventListener('click', () => {
+    duplicateItem(item.id);
+    render();
+  });
+
   card.querySelector('.delete').addEventListener('click', () => {
+    const confirmed = window.confirm(`¿Eliminar "${item.name}"?`);
+    if (!confirmed) return;
     state.items = state.items.filter((x) => x.id !== item.id);
     markUnsaved();
     render();
@@ -670,21 +1074,117 @@ function buildCard(item) {
   });
 
   renderQuickMarks();
+  renderCardLinks();
   return card;
+}
+
+function appendEmptyState(container, message) {
+  const empty = document.createElement('p');
+  empty.className = 'empty-state';
+  empty.textContent = message;
+  container.appendChild(empty);
+}
+
+function clearDropIndicators(container) {
+  container.querySelectorAll('.drop-before').forEach((card) => {
+    card.classList.remove('drop-before');
+  });
+}
+
+function getDropIndex(container, pointerY) {
+  const cards = Array.from(container.querySelectorAll('.card:not(.dragging)'));
+  let closest = { offset: Number.NEGATIVE_INFINITY, index: cards.length };
+
+  cards.forEach((card, index) => {
+    const box = card.getBoundingClientRect();
+    const offset = pointerY - box.top - box.height / 2;
+
+    if (offset < 0 && offset > closest.offset) {
+      closest = { offset, index };
+    }
+  });
+
+  return closest.index;
+}
+
+function updateDropIndicator(container, pointerY) {
+  clearDropIndicators(container);
+  if (hasActiveViewFilter()) return;
+
+  const cards = Array.from(container.querySelectorAll('.card:not(.dragging)'));
+  const index = getDropIndex(container, pointerY);
+  if (cards[index]) cards[index].classList.add('drop-before');
+}
+
+function attachDropHandlers(container, targetDayId) {
+  container.ondragover = (event) => {
+    event.preventDefault();
+    container.classList.add('drag-over');
+    updateDropIndicator(container, event.clientY);
+  };
+
+  container.ondragleave = () => {
+    container.classList.remove('drag-over');
+    clearDropIndicators(container);
+  };
+
+  container.ondrop = (event) => {
+    event.preventDefault();
+    container.classList.remove('drag-over');
+    clearDropIndicators(container);
+    if (!draggedId) return;
+
+    const targetIndex = hasActiveViewFilter()
+      ? getNextOrderForDay(targetDayId, draggedId)
+      : getDropIndex(container, event.clientY);
+    moveItemToDayAt(draggedId, targetDayId, targetIndex);
+    render();
+  };
+}
+
+function renderItems(container, items, emptyMessage) {
+  if (items.length === 0) {
+    appendEmptyState(container, emptyMessage);
+    return;
+  }
+
+  items.forEach((item) => container.appendChild(buildCard(item)));
 }
 
 function buildDayColumn(day) {
   const col = document.createElement('section');
   col.className = 'day';
   col.dataset.dayId = day.id;
-  col.innerHTML = `
-    <div class="day-head">
-      <h3>${day.name}</h3>
-      <button type="button" class="day-delete">Eliminar día</button>
-    </div>
-  `;
 
-  const deleteDayBtn = col.querySelector('.day-delete');
+  const dayHead = document.createElement('div');
+  dayHead.className = 'day-head';
+
+  const titleInput = document.createElement('input');
+  titleInput.className = 'day-title-input';
+  titleInput.value = day.name;
+  titleInput.setAttribute('aria-label', `Nombre de ${day.name}`);
+  titleInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') titleInput.blur();
+  });
+  titleInput.addEventListener('change', () => {
+    renameDay(day.id, titleInput.value);
+  });
+
+  const deleteDayBtn = document.createElement('button');
+  deleteDayBtn.type = 'button';
+  deleteDayBtn.className = 'day-delete';
+  deleteDayBtn.textContent = 'Eliminar día';
+
+  dayHead.append(titleInput, deleteDayBtn);
+  col.appendChild(dayHead);
+
+  const summary = getDaySummary(day.id);
+  const daySummaryEl = document.createElement('div');
+  daySummaryEl.className = 'day-summary';
+  daySummaryEl.classList.toggle('is-heavy', summary.hours > DAILY_HOURS_WARNING);
+  daySummaryEl.textContent = `${summary.visible}/${summary.total} paradas · ${summary.hours}h · ${summary.done} completadas`;
+  col.appendChild(daySummaryEl);
+
   deleteDayBtn.addEventListener('click', () => {
     if (state.days.length <= 1) {
       window.alert('Debe quedar al menos un día en la planificación.');
@@ -711,21 +1211,8 @@ function buildDayColumn(day) {
     render();
   });
 
-  col.addEventListener('dragover', (event) => {
-    event.preventDefault();
-    col.classList.add('drag-over');
-  });
-
-  col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
-
-  col.addEventListener('drop', () => {
-    col.classList.remove('drag-over');
-    if (!draggedId) return;
-    moveItemToDay(draggedId, day.id);
-    render();
-  });
-
-  getItemsForDay(day.id).forEach((item) => col.appendChild(buildCard(item)));
+  attachDropHandlers(col, day.id);
+  renderItems(col, getVisibleItemsForDay(day.id), hasActiveViewFilter() ? 'Sin resultados visibles.' : 'Sin paradas.');
   return col;
 }
 
@@ -797,33 +1284,30 @@ async function copyCurrentPlanTo(targetPlanKey) {
 
 function updateStats() {
   const totalStops = state.items.length;
+  const visibleStops = state.items.filter(itemMatchesView).length;
   const totalHours = state.items.reduce((sum, item) => sum + Number(item.duration || 0), 0);
   const doneCount = state.items.filter((item) => item.marks?.done).length;
+  const heavyDays = state.days.filter((day) => getDaySummary(day.id).hours > DAILY_HOURS_WARNING).length;
 
-  statStopsEl.textContent = `${totalStops} paradas`;
+  statStopsEl.textContent = hasActiveViewFilter()
+    ? `${visibleStops}/${totalStops} visibles`
+    : `${totalStops} paradas`;
   statHoursEl.textContent = `${totalHours}h estimadas`;
   statDoneEl.textContent = `${doneCount} completadas`;
+  if (statWarningsEl) {
+    statWarningsEl.textContent = heavyDays === 0
+      ? 'Sin sobrecarga'
+      : `${heavyDays} día${heavyDays === 1 ? '' : 's'} sobre ${DAILY_HOURS_WARNING}h`;
+    statWarningsEl.dataset.level = heavyDays === 0 ? 'ok' : 'warning';
+  }
 }
 
 function render() {
   itineraryEl.innerHTML = '';
   unassignedEl.innerHTML = '';
 
-  unassignedEl.ondragover = (event) => {
-    event.preventDefault();
-    unassignedEl.classList.add('drag-over');
-  };
-
-  unassignedEl.ondragleave = () => unassignedEl.classList.remove('drag-over');
-
-  unassignedEl.ondrop = () => {
-    unassignedEl.classList.remove('drag-over');
-    if (!draggedId) return;
-    moveItemToDay(draggedId, null);
-    render();
-  };
-
-  getItemsForDay(null).forEach((item) => unassignedEl.appendChild(buildCard(item)));
+  attachDropHandlers(unassignedEl, null);
+  renderItems(unassignedEl, getVisibleItemsForDay(null), hasActiveViewFilter() ? 'Sin resultados visibles.' : 'Sin paradas sin asignar.');
   state.days.forEach((day) => itineraryEl.appendChild(buildDayColumn(day)));
   clampMobileDayIndex();
   applyMobileDayNavigation();
@@ -834,6 +1318,8 @@ function render() {
 function buildItemFromForm() {
   const dayId = daySelectEl.value || null;
   const kind = entryKindEl.value;
+  const mapUrl = mapUrlEl.value.trim();
+  const reservationUrl = reservationUrlEl.value.trim();
 
   if (kind === 'trip') {
     const start = tripStartEl.value.trim();
@@ -854,6 +1340,11 @@ function buildItemFromForm() {
       name: mode === 'Ferry' ? `Ferry ${route}` : `Viaje ${route}`,
       location: route,
       type: normalizeType(mode),
+      kind: 'trip',
+      start,
+      end,
+      mapUrl,
+      reservationUrl,
       duration: Number.isFinite(duration) && duration > 0 ? duration : 1,
       marks: { must: false, booked: false, done: false, lodging: false, dayvisit: false },
       notes: ''
@@ -876,6 +1367,11 @@ function buildItemFromForm() {
     name: placeName,
     location: placeLocation,
     type: placeType,
+    kind: 'place',
+    start: '',
+    end: '',
+    mapUrl,
+    reservationUrl,
     duration: Number.isFinite(placeDuration) && placeDuration > 0 ? placeDuration : 1,
     marks: { must: false, booked: false, done: false, lodging: false, dayvisit: false },
     notes: ''
@@ -887,6 +1383,8 @@ function resetFormAfterSubmit(selectedKind, selectedDayId) {
   entryKindEl.value = selectedKind;
   placeDurationEl.value = 2;
   tripDurationEl.value = 4;
+  mapUrlEl.value = '';
+  reservationUrlEl.value = '';
   daySelectEl.value = selectedDayId || '';
   updateEntryKindUI();
 }
@@ -949,6 +1447,24 @@ entryKindEl.addEventListener('change', () => {
   updateEntryKindUI();
 });
 
+searchInputEl.addEventListener('input', () => {
+  searchTerm = searchInputEl.value;
+  render();
+});
+
+filterSelectEl.addEventListener('change', () => {
+  activeFilter = filterSelectEl.value;
+  render();
+});
+
+clearFiltersBtn.addEventListener('click', () => {
+  searchTerm = '';
+  activeFilter = 'all';
+  searchInputEl.value = '';
+  filterSelectEl.value = 'all';
+  render();
+});
+
 planSelectEl.addEventListener('change', async () => {
   try {
     await switchToPlan(planSelectEl.value);
@@ -997,7 +1513,7 @@ saveBtn.addEventListener('click', async () => {
   }
 
   try {
-    await saveCurrentState();
+    await saveCurrentState({ source: 'manual' });
   } catch (error) {
     console.error('Error al guardar:', error.message);
     updateSyncStatus(`No se pudo guardar "${getPlanLabel(currentPlanKey)}" en la base de datos.`, 'error');
@@ -1043,6 +1559,12 @@ importJsonInput.addEventListener('change', async () => {
   } finally {
     importJsonInput.value = '';
   }
+});
+
+window.addEventListener('beforeunload', (event) => {
+  if (!hasUnsavedChanges || !supabaseClient) return;
+  event.preventDefault();
+  event.returnValue = '';
 });
 
 async function init() {
