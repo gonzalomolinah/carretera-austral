@@ -14,10 +14,17 @@ Base inicial incluida: itinerario referencial de **12 días partiendo desde Puer
   - Imprescindible
   - Reservado
   - Completado
+- Editar cualquier dato de una parada (nombre, lugar, tipo, duración, costo, ruta) desde el botón ✎
+- Reordenar dentro de un día con drag & drop o con los botones ▲▼ (compatible con táctil/iOS)
+- Costo estimado por parada con totales por día y por viaje
 - Notas por parada
 - Enlaces opcionales de mapa y reserva
+- Modo claro/oscuro (respeta la preferencia del sistema)
+- Exportar a PDF / imprimir el itinerario
+- Deshacer la última acción destructiva (borrar, reiniciar, importar)
 - Persistencia local en navegador (`localStorage`)
 - Autosave remoto con detección de conflictos usando `updated_at`
+- Sincronización en vivo entre dispositivos con Supabase Realtime
 
 ## Uso rápido
 
@@ -36,6 +43,10 @@ Ejecuta `supabase/schema.sql` en el SQL Editor.
 ### 2) Cargar datos iniciales
 
 Ejecuta `supabase/seed.sql` en el SQL Editor.
+
+### 2b) Activar sincronización en vivo (opcional)
+
+Ejecuta `supabase/migration.sql` una vez para habilitar Supabase Realtime. Con esto, los cambios hechos en un navegador aparecen en otros sin recargar. Si hay cambios locales sin guardar, se avisa de conflicto en lugar de pisarlos.
 
 ### 3) Pegar credenciales en la app
 
@@ -62,5 +73,6 @@ Si no configuras las credenciales, la app sigue funcionando con `localStorage` c
 - `app.js` lógica de estado e interacción
 - `supabase/schema.sql` estructura y seguridad mínima de la tabla
 - `supabase/seed.sql` estado inicial del itinerario
+- `supabase/migration.sql` activa la sincronización en vivo (Realtime)
 
 La base se mantiene simple: cada planificación sigue guardándose como un único `state_json` en `planner_state`.

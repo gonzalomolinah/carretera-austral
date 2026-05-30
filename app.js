@@ -7,6 +7,8 @@ const STATE_SCHEMA_VERSION = 2;
 const AUTO_SAVE_DELAY_MS = 1400;
 const DAILY_HOURS_WARNING = 9;
 const REMOTE_CONFLICT_CODE = 'REMOTE_CONFLICT';
+const THEME_KEY = 'carretera-austral-theme';
+const TOAST_DURATION_MS = 6000;
 
 const PLAN_OPTIONS = [
   { key: 'general', label: 'General' },
@@ -70,6 +72,10 @@ let changeSerial = 0;
 let pendingConflict = null;
 let activeFilter = 'all';
 let searchTerm = '';
+let realtimeChannel = null;
+let undoSnapshot = null;
+let toastTimer = null;
+const expandedItems = new Set();
 
 const typeStyles = {
   Naturaleza: { cls: 'type-naturaleza', label: '🌲 Naturaleza' },
@@ -96,11 +102,18 @@ const form = document.getElementById('attractionForm');
 const cardTemplate = document.getElementById('cardTemplate');
 const statStopsEl = document.getElementById('statStops');
 const statHoursEl = document.getElementById('statHours');
+const statCostEl = document.getElementById('statCost');
 const statDoneEl = document.getElementById('statDone');
 const statWarningsEl = document.getElementById('statWarnings');
 const saveBtn = document.getElementById('saveBtn');
 const syncStatusEl = document.getElementById('syncStatus');
 const planSelectEl = document.getElementById('planSelect');
+const themeToggleEl = document.getElementById('themeToggle');
+const entryCostEl = document.getElementById('entryCost');
+const printBtn = document.getElementById('printBtn');
+const toastEl = document.getElementById('toast');
+const toastMessageEl = toastEl ? toastEl.querySelector('.toast-message') : null;
+const toastActionEl = toastEl ? toastEl.querySelector('.toast-action') : null;
 
 const entryKindEl = document.getElementById('entryKind');
 const placeFieldsEl = document.getElementById('placeFields');
@@ -136,6 +149,111 @@ const syncTimeFormatter = new Intl.DateTimeFormat('es-CL', {
   minute: '2-digit',
   second: '2-digit'
 });
+
+const currencyFormatter = new Intl.NumberFormat('es-CL', {
+  style: 'currency',
+  currency: 'CLP',
+  maximumFractionDigits: 0
+});
+
+function sanitizeCost(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 0;
+}
+
+function formatCLP(value) {
+  return currencyFormatter.format(sanitizeCost(value));
+}
+
+function hideToast() {
+  if (!toastEl) return;
+  if (toastTimer) {
+    clearTimeout(toastTimer);
+    toastTimer = null;
+  }
+  toastEl.hidden = true;
+  toastEl.classList.remove('is-visible');
+}
+
+function showToast(message, options = {}) {
+  if (!toastEl) {
+    window.alert(message);
+    return;
+  }
+
+  const { actionLabel = '', onAction = null, duration = TOAST_DURATION_MS } = options;
+  if (toastTimer) clearTimeout(toastTimer);
+
+  toastMessageEl.textContent = message;
+
+  if (actionLabel && typeof onAction === 'function') {
+    toastActionEl.textContent = actionLabel;
+    toastActionEl.hidden = false;
+    toastActionEl.onclick = () => {
+      hideToast();
+      onAction();
+    };
+  } else {
+    toastActionEl.hidden = true;
+    toastActionEl.onclick = null;
+  }
+
+  toastEl.hidden = false;
+  // Force reflow so the transition runs on each show.
+  void toastEl.offsetWidth;
+  toastEl.classList.add('is-visible');
+  toastTimer = window.setTimeout(hideToast, duration);
+}
+
+function captureUndo() {
+  undoSnapshot = structuredClone(state);
+}
+
+function undoLastChange() {
+  if (!undoSnapshot) return;
+  state = sanitizeState(undoSnapshot);
+  undoSnapshot = null;
+  normalizeState();
+  markUnsaved();
+  render();
+  updateSyncStatus(`Cambio deshecho en "${getPlanLabel(currentPlanKey)}".`, supabaseClient ? 'pending' : 'local');
+}
+
+function runUndoableAction(mutate, { message, undoLabel = 'Deshacer' } = {}) {
+  captureUndo();
+  mutate();
+  markUnsaved();
+  render();
+  if (message) {
+    showToast(message, { actionLabel: undoLabel, onAction: undoLastChange });
+  }
+}
+
+function resolveInitialTheme() {
+  const stored = localStorage.getItem(THEME_KEY);
+  if (stored === 'light' || stored === 'dark') return stored;
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+    ? 'dark'
+    : 'light';
+}
+
+function applyTheme(theme) {
+  const nextTheme = theme === 'dark' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = nextTheme;
+  if (themeToggleEl) {
+    themeToggleEl.textContent = nextTheme === 'dark' ? '☀️' : '🌙';
+    themeToggleEl.setAttribute(
+      'aria-label',
+      nextTheme === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'
+    );
+  }
+}
+
+function toggleTheme() {
+  const nextTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  localStorage.setItem(THEME_KEY, nextTheme);
+  applyTheme(nextTheme);
+}
 
 function getPlanLabel(planKey) {
   return PLAN_OPTIONS.find((plan) => plan.key === planKey)?.label || planKey;
@@ -310,6 +428,7 @@ function sanitizeState(rawState) {
       mapUrl: sanitizeUrl(source.mapUrl),
       reservationUrl: sanitizeUrl(source.reservationUrl || source.bookingUrl),
       duration,
+      cost: sanitizeCost(source.cost),
       marks: sanitizeMarks(source.marks),
       notes: limitText(source.notes, 1200)
     };
@@ -479,6 +598,7 @@ function getDaySummary(dayValue) {
     total: items.length,
     visible: items.filter(itemMatchesView).length,
     hours: items.reduce((sum, item) => sum + Number(item.duration || 0), 0),
+    cost: items.reduce((sum, item) => sum + sanitizeCost(item.cost), 0),
     done: items.filter((item) => item.marks?.done).length,
     lodging: items.filter((item) => item.marks?.lodging).length
   };
@@ -506,6 +626,7 @@ function normalizeState() {
     item.location = limitText(item.location, 140);
     const parsedDuration = Number(item.duration);
     item.duration = Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : 1;
+    item.cost = sanitizeCost(item.cost);
     if (typeof item.notes !== 'string') item.notes = '';
     item.type = normalizeType(item.type);
     item.kind = normalizeKind(item.kind, item.type);
@@ -591,6 +712,25 @@ function moveItemToDayAt(itemId, targetDayId, targetIndex) {
   markUnsaved();
 }
 
+function moveItemWithinDay(itemId, direction) {
+  const item = state.items.find((entry) => entry.id === itemId);
+  if (!item) return;
+
+  const siblings = getItemsForDay(item.dayId || null);
+  const currentIndex = siblings.findIndex((entry) => entry.id === itemId);
+  const targetIndex = currentIndex + (direction === 'up' ? -1 : 1);
+  if (currentIndex === -1 || targetIndex < 0 || targetIndex >= siblings.length) return;
+
+  siblings.splice(currentIndex, 1);
+  siblings.splice(targetIndex, 0, item);
+  siblings.forEach((entry, index) => {
+    entry.order = index;
+  });
+
+  markUnsaved();
+  render();
+}
+
 function duplicateItem(itemId) {
   const item = state.items.find((entry) => entry.id === itemId);
   if (!item) return;
@@ -627,6 +767,70 @@ function canUseSupabase() {
 function initSupabase() {
   if (!canUseSupabase()) return;
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}
+
+function unsubscribeRealtime() {
+  if (!supabaseClient || !realtimeChannel) return;
+  supabaseClient.removeChannel(realtimeChannel);
+  realtimeChannel = null;
+}
+
+function handleRealtimeChange(payload) {
+  const incoming = payload?.new;
+  if (!incoming || !incoming.state_json) return;
+
+  // A save in flight will echo back here before we record its updated_at; skip it.
+  // A genuine concurrent write during our save is caught by the optimistic-lock conflict path.
+  if (isSaving) return;
+
+  // Ignore the echo of our own write.
+  if (incoming.updated_at && incoming.updated_at === lastRemoteUpdatedAt) return;
+
+  let remoteState;
+  try {
+    remoteState = sanitizeState(incoming.state_json);
+  } catch (error) {
+    console.warn('Estado remoto en tiempo real inválido, se ignora:', error.message);
+    return;
+  }
+
+  if (hasUnsavedChanges) {
+    // Don't clobber the user's local edits; surface a conflict instead.
+    pendingConflict = {
+      localSnapshot: sanitizeState(structuredClone(state)),
+      remoteUpdatedAt: incoming.updated_at || null
+    };
+    lastRemoteUpdatedAt = incoming.updated_at || lastRemoteUpdatedAt;
+    updateSyncStatus('Otro dispositivo editó esta planificación. Guarda para resolver el conflicto.', 'conflict');
+    return;
+  }
+
+  state = remoteState;
+  lastRemoteUpdatedAt = incoming.updated_at || lastRemoteUpdatedAt;
+  hasUnsavedChanges = false;
+  persistLocalPlanState(currentPlanKey, state);
+  normalizeState();
+  render();
+  updateSyncStatus(`Actualizado en vivo desde otro dispositivo (${syncTimeFormatter.format(new Date())}).`, 'saved');
+}
+
+function subscribeRealtime(planKey) {
+  if (!supabaseClient) return;
+  unsubscribeRealtime();
+
+  realtimeChannel = supabaseClient
+    .channel(`plan-${planKey}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: SUPABASE_TABLE,
+        filter: `id=eq.${getPlanRowId(planKey)}`
+      },
+      handleRealtimeChange
+    )
+    .subscribe();
 }
 
 function clearAutoSaveTimer() {
@@ -863,7 +1067,9 @@ async function switchToPlan(nextPlanKey, options = {}) {
   }
 
   clearAutoSaveTimer();
+  unsubscribeRealtime();
   pendingConflict = null;
+  expandedItems.clear();
   setPlanSelectBusy(true);
   updateSyncStatus(`Cargando planificación "${getPlanLabel(nextPlanKey)}"...`, 'saving');
 
@@ -898,6 +1104,7 @@ async function switchToPlan(nextPlanKey, options = {}) {
     refreshCopyPlanOptions();
     render();
     planSelectEl.value = currentPlanKey;
+    subscribeRealtime(currentPlanKey);
   } finally {
     setPlanSelectBusy(false);
   }
@@ -928,26 +1135,35 @@ function buildCard(item) {
     card.draggable = false;
   }
 
-  const isTransport = item.kind === 'trip' || item.type === 'Traslado' || item.type === 'Ferry';
   const titleEl = card.querySelector('.title');
   const metaEl = card.querySelector('.meta');
   const quickMarksEl = card.querySelector('.quick-marks');
   const linkActionsEl = card.querySelector('.link-actions');
-
-  if (isTransport) {
-    card.classList.add('card-transport');
-    if (item.type === 'Ferry') card.classList.add('card-ferry');
-    titleEl.textContent = item.location || item.name || 'Inicio - Destino';
-    metaEl.textContent = `⏱ ${item.duration}h total`;
-  } else {
-    titleEl.textContent = item.name;
-    metaEl.textContent = `${item.location} · ${item.duration}h`;
-  }
-
   const typeEl = card.querySelector('.type');
-  const typeInfo = typeStyles[item.type] || { cls: 'type-logistica', label: item.type };
-  typeEl.textContent = typeInfo.label;
-  typeEl.classList.add(typeInfo.cls);
+
+  const isTransportItem = () => item.kind === 'trip' || item.type === 'Traslado' || item.type === 'Ferry';
+
+  const paintHeader = () => {
+    const isTransport = isTransportItem();
+    card.classList.toggle('card-transport', isTransport);
+    card.classList.toggle('card-ferry', isTransport && item.type === 'Ferry');
+
+    const costSuffix = item.cost > 0 ? ` · ${formatCLP(item.cost)}` : '';
+    if (isTransport) {
+      titleEl.textContent = item.location || item.name || 'Inicio - Destino';
+      metaEl.textContent = `⏱ ${item.duration}h total${costSuffix}`;
+    } else {
+      titleEl.textContent = item.name;
+      metaEl.textContent = `${item.location} · ${item.duration}h${costSuffix}`;
+    }
+
+    const typeInfo = typeStyles[item.type] || { cls: 'type-logistica', label: item.type };
+    typeEl.className = 'type';
+    typeEl.classList.add(typeInfo.cls);
+    typeEl.textContent = typeInfo.label;
+  };
+
+  paintHeader();
 
   const renderQuickMarks = () => {
     quickMarksEl.innerHTML = '';
@@ -959,7 +1175,7 @@ function buildCard(item) {
       quickMarksEl.appendChild(tag);
     });
 
-    if (isTransport && quickMarksEl.childElementCount === 0) {
+    if (isTransportItem() && quickMarksEl.childElementCount === 0) {
       quickMarksEl.classList.add('hidden');
     } else {
       quickMarksEl.classList.remove('hidden');
@@ -1010,6 +1226,97 @@ function buildCard(item) {
   const editBtn = card.querySelector('.edit');
   const mapUrlInput = card.querySelector('.map-url');
   const reservationUrlInput = card.querySelector('.reservation-url');
+  const moveUpBtn = card.querySelector('.move-up');
+  const moveDownBtn = card.querySelector('.move-down');
+
+  // Reorder within day (touch + keyboard friendly). Disabled while a filter hides cards.
+  const siblings = getItemsForDay(item.dayId || null);
+  const positionInDay = siblings.findIndex((entry) => entry.id === item.id);
+  const reorderBlocked = hasActiveViewFilter();
+  moveUpBtn.disabled = reorderBlocked || positionInDay <= 0;
+  moveDownBtn.disabled = reorderBlocked || positionInDay === siblings.length - 1;
+  moveUpBtn.addEventListener('click', () => moveItemWithinDay(item.id, 'up'));
+  moveDownBtn.addEventListener('click', () => moveItemWithinDay(item.id, 'down'));
+
+  // Inline editing of every field. `change` fires on blur, so a full render won't interrupt typing.
+  const editKindSelect = card.querySelector('.edit-entry-kind');
+  const editPlaceFields = card.querySelector('.edit-place-fields');
+  const editTripFields = card.querySelector('.edit-trip-fields');
+  const editNameInput = card.querySelector('.edit-name');
+  const editLocationInput = card.querySelector('.edit-location');
+  const editTypeSelect = card.querySelector('.edit-type');
+  const editStartInput = card.querySelector('.edit-start');
+  const editEndInput = card.querySelector('.edit-end');
+  const editModeSelect = card.querySelector('.edit-mode');
+  const editDurationInput = card.querySelector('.edit-duration');
+  const editCostInput = card.querySelector('.edit-cost');
+
+  const paintEditFields = () => {
+    const isTrip = item.kind === 'trip';
+    editKindSelect.value = isTrip ? 'trip' : 'place';
+    editPlaceFields.classList.toggle('hidden', isTrip);
+    editTripFields.classList.toggle('hidden', !isTrip);
+    editNameInput.value = item.name || '';
+    editLocationInput.value = item.location || '';
+    editTypeSelect.value = typeStyles[item.type] && !isTrip ? item.type : 'Logística';
+    editStartInput.value = item.start || '';
+    editEndInput.value = item.end || '';
+    editModeSelect.value = item.type === 'Ferry' ? 'Ferry' : 'Traslado';
+    editDurationInput.value = item.duration;
+    editCostInput.value = item.cost || 0;
+  };
+  paintEditFields();
+
+  const commitEdit = (mutate, { rerender = false } = {}) => {
+    mutate();
+    if (rerender) {
+      markUnsaved();
+      render();
+    } else {
+      paintHeader();
+      markUnsaved();
+      updateStats();
+    }
+  };
+
+  editKindSelect.addEventListener('change', () => {
+    commitEdit(() => {
+      const nextKind = editKindSelect.value === 'trip' ? 'trip' : 'place';
+      item.kind = nextKind;
+      if (nextKind === 'place' && (item.type === 'Traslado' || item.type === 'Ferry')) {
+        item.type = 'Logística';
+      } else if (nextKind === 'trip' && item.type !== 'Ferry') {
+        item.type = 'Traslado';
+      }
+    }, { rerender: true });
+  });
+  editNameInput.addEventListener('change', () => {
+    commitEdit(() => { item.name = limitText(editNameInput.value, 140) || item.name; });
+  });
+  editLocationInput.addEventListener('change', () => {
+    commitEdit(() => { item.location = limitText(editLocationInput.value, 140); });
+  });
+  editTypeSelect.addEventListener('change', () => {
+    commitEdit(() => { item.type = normalizeType(editTypeSelect.value); }, { rerender: true });
+  });
+  editStartInput.addEventListener('change', () => {
+    commitEdit(() => { item.start = limitText(editStartInput.value, 80); }, { rerender: true });
+  });
+  editEndInput.addEventListener('change', () => {
+    commitEdit(() => { item.end = limitText(editEndInput.value, 80); }, { rerender: true });
+  });
+  editModeSelect.addEventListener('change', () => {
+    commitEdit(() => { item.type = normalizeType(editModeSelect.value); }, { rerender: true });
+  });
+  editDurationInput.addEventListener('change', () => {
+    commitEdit(() => {
+      const parsed = Number(editDurationInput.value);
+      item.duration = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+    }, { rerender: true });
+  });
+  editCostInput.addEventListener('change', () => {
+    commitEdit(() => { item.cost = sanitizeCost(editCostInput.value); }, { rerender: true });
+  });
 
   moveDaySelect.innerHTML = '<option value="">Sin asignar</option>';
   state.days.forEach((day) => {
@@ -1042,13 +1349,25 @@ function buildCard(item) {
     markUnsaved();
   });
 
+  const setEditOpen = (isOpen) => {
+    details.classList.toggle('hidden', !isOpen);
+    editBtn.classList.toggle('is-open', isOpen);
+    editBtn.textContent = isOpen ? '✕' : '✎';
+    editBtn.setAttribute('aria-label', isOpen ? 'Cerrar' : 'Editar');
+    editBtn.setAttribute('title', isOpen ? 'Cerrar' : 'Editar');
+  };
+
   editBtn.addEventListener('click', () => {
-    const isNowHidden = details.classList.toggle('hidden');
-    editBtn.classList.toggle('is-open', !isNowHidden);
-    editBtn.textContent = isNowHidden ? '✎' : '✕';
-    editBtn.setAttribute('aria-label', isNowHidden ? 'Editar' : 'Cerrar');
-    editBtn.setAttribute('title', isNowHidden ? 'Editar' : 'Cerrar');
+    const willOpen = !expandedItems.has(item.id);
+    if (willOpen) {
+      expandedItems.add(item.id);
+    } else {
+      expandedItems.delete(item.id);
+    }
+    setEditOpen(willOpen);
   });
+
+  setEditOpen(expandedItems.has(item.id));
 
   card.querySelector('.duplicate').addEventListener('click', () => {
     duplicateItem(item.id);
@@ -1056,11 +1375,12 @@ function buildCard(item) {
   });
 
   card.querySelector('.delete').addEventListener('click', () => {
-    const confirmed = window.confirm(`¿Eliminar "${item.name}"?`);
-    if (!confirmed) return;
-    state.items = state.items.filter((x) => x.id !== item.id);
-    markUnsaved();
-    render();
+    const itemName = item.name;
+    expandedItems.delete(item.id);
+    runUndoableAction(
+      () => { state.items = state.items.filter((x) => x.id !== item.id); },
+      { message: `Parada "${itemName}" eliminada.` }
+    );
   });
 
   card.addEventListener('dragstart', () => {
@@ -1182,7 +1502,8 @@ function buildDayColumn(day) {
   const daySummaryEl = document.createElement('div');
   daySummaryEl.className = 'day-summary';
   daySummaryEl.classList.toggle('is-heavy', summary.hours > DAILY_HOURS_WARNING);
-  daySummaryEl.textContent = `${summary.visible}/${summary.total} paradas · ${summary.hours}h · ${summary.done} completadas`;
+  const dayCostText = summary.cost > 0 ? ` · ${formatCLP(summary.cost)}` : '';
+  daySummaryEl.textContent = `${summary.visible}/${summary.total} paradas · ${summary.hours}h${dayCostText} · ${summary.done} completadas`;
   col.appendChild(daySummaryEl);
 
   deleteDayBtn.addEventListener('click', () => {
@@ -1193,22 +1514,24 @@ function buildDayColumn(day) {
 
     const dayItems = getItemsForDay(day.id);
     const itemCount = dayItems.length;
-    const confirmed = window.confirm(
-      `¿Eliminar ${day.name}? ${itemCount > 0 ? `Sus ${itemCount} parada(s) pasarán a "Sin asignar".` : ''}`
+    const dayName = day.name;
+
+    runUndoableAction(
+      () => {
+        let nextUnassignedOrder = getNextOrderForDay(null);
+        dayItems.forEach((item) => {
+          item.dayId = null;
+          item.order = nextUnassignedOrder;
+          nextUnassignedOrder += 1;
+        });
+        state.days = state.days.filter((entry) => entry.id !== day.id);
+      },
+      {
+        message: itemCount > 0
+          ? `${dayName} eliminado. ${itemCount} parada(s) movidas a "Sin asignar".`
+          : `${dayName} eliminado.`
+      }
     );
-
-    if (!confirmed) return;
-
-    let nextUnassignedOrder = getNextOrderForDay(null);
-    dayItems.forEach((item) => {
-      item.dayId = null;
-      item.order = nextUnassignedOrder;
-      nextUnassignedOrder += 1;
-    });
-
-    state.days = state.days.filter((entry) => entry.id !== day.id);
-    markUnsaved();
-    render();
   });
 
   attachDropHandlers(col, day.id);
@@ -1286,6 +1609,7 @@ function updateStats() {
   const totalStops = state.items.length;
   const visibleStops = state.items.filter(itemMatchesView).length;
   const totalHours = state.items.reduce((sum, item) => sum + Number(item.duration || 0), 0);
+  const totalCost = state.items.reduce((sum, item) => sum + sanitizeCost(item.cost), 0);
   const doneCount = state.items.filter((item) => item.marks?.done).length;
   const heavyDays = state.days.filter((day) => getDaySummary(day.id).hours > DAILY_HOURS_WARNING).length;
 
@@ -1293,6 +1617,7 @@ function updateStats() {
     ? `${visibleStops}/${totalStops} visibles`
     : `${totalStops} paradas`;
   statHoursEl.textContent = `${totalHours}h estimadas`;
+  if (statCostEl) statCostEl.textContent = `${formatCLP(totalCost)} estimado`;
   statDoneEl.textContent = `${doneCount} completadas`;
   if (statWarningsEl) {
     statWarningsEl.textContent = heavyDays === 0
@@ -1320,6 +1645,7 @@ function buildItemFromForm() {
   const kind = entryKindEl.value;
   const mapUrl = mapUrlEl.value.trim();
   const reservationUrl = reservationUrlEl.value.trim();
+  const cost = sanitizeCost(entryCostEl ? entryCostEl.value : 0);
 
   if (kind === 'trip') {
     const start = tripStartEl.value.trim();
@@ -1346,6 +1672,7 @@ function buildItemFromForm() {
       mapUrl,
       reservationUrl,
       duration: Number.isFinite(duration) && duration > 0 ? duration : 1,
+      cost,
       marks: { must: false, booked: false, done: false, lodging: false, dayvisit: false },
       notes: ''
     };
@@ -1373,6 +1700,7 @@ function buildItemFromForm() {
     mapUrl,
     reservationUrl,
     duration: Number.isFinite(placeDuration) && placeDuration > 0 ? placeDuration : 1,
+    cost,
     marks: { must: false, booked: false, done: false, lodging: false, dayvisit: false },
     notes: ''
   };
@@ -1383,6 +1711,7 @@ function resetFormAfterSubmit(selectedKind, selectedDayId) {
   entryKindEl.value = selectedKind;
   placeDurationEl.value = 2;
   tripDurationEl.value = 4;
+  if (entryCostEl) entryCostEl.value = 0;
   mapUrlEl.value = '';
   reservationUrlEl.value = '';
   daySelectEl.value = selectedDayId || '';
@@ -1414,16 +1743,10 @@ async function importStateFromFile(file) {
   const parsed = JSON.parse(text);
   const imported = sanitizeState(parsed);
 
-  const confirmed = window.confirm(
-    `Este JSON reemplazará la planificación "${getPlanLabel(currentPlanKey)}". ¿Continuar?`
+  runUndoableAction(
+    () => { state = imported; },
+    { message: `JSON importado en "${getPlanLabel(currentPlanKey)}".` }
   );
-
-  if (!confirmed) return;
-
-  state = imported;
-  normalizeState();
-  render();
-  markUnsaved();
 }
 
 form.addEventListener('submit', (event) => {
@@ -1528,16 +1851,10 @@ addDayBtn.addEventListener('click', () => {
 });
 
 resetBtn.addEventListener('click', () => {
-  const confirmed = window.confirm(
-    `¿Seguro que quieres cargar la base recomendada de 12 días en "${getPlanLabel(currentPlanKey)}"?`
+  runUndoableAction(
+    () => { state = structuredClone(defaultData); },
+    { message: `Base recomendada de 12 días cargada en "${getPlanLabel(currentPlanKey)}".` }
   );
-
-  if (!confirmed) return;
-
-  state = structuredClone(defaultData);
-  normalizeState();
-  markUnsaved();
-  render();
 });
 
 exportJsonBtn.addEventListener('click', () => {
@@ -1561,6 +1878,27 @@ importJsonInput.addEventListener('change', async () => {
   }
 });
 
+printBtn.addEventListener('click', () => {
+  window.print();
+});
+
+if (themeToggleEl) {
+  themeToggleEl.addEventListener('click', toggleTheme);
+}
+
+// iOS Safari rarely fires `beforeunload`; flush an immediate save on pagehide/tab-hide.
+function flushPendingSave() {
+  if (!hasUnsavedChanges || !supabaseClient || pendingConflict) return;
+  saveCurrentState({ source: 'auto' }).catch((error) => {
+    console.warn('No se pudo guardar al salir:', error.message);
+  });
+}
+
+window.addEventListener('pagehide', flushPendingSave);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushPendingSave();
+});
+
 window.addEventListener('beforeunload', (event) => {
   if (!hasUnsavedChanges || !supabaseClient) return;
   event.preventDefault();
@@ -1568,6 +1906,7 @@ window.addEventListener('beforeunload', (event) => {
 });
 
 async function init() {
+  applyTheme(resolveInitialTheme());
   updateEntryKindUI();
   initSupabase();
 

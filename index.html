@@ -3,13 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
   <title>Carretera Austral Planner</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header class="hero">
     <div class="hero-content">
-      <p class="eyebrow">Planificador de viaje</p>
+      <div class="hero-top">
+        <p class="eyebrow">Planificador de viaje</p>
+        <button id="themeToggle" type="button" class="theme-toggle" aria-label="Cambiar tema" title="Cambiar tema">🌙</button>
+      </div>
       <h1>🛣️ Carretera Austral Planner</h1>
       <p>
         Base recomendada: Puerto Montt (12 días). Organiza tus paradas, arrastra actividades entre días
@@ -82,6 +86,9 @@
         </div>
 
         <div class="field-grid optional-fields">
+          <label>Costo estimado (CLP)
+            <input id="entryCost" type="number" min="0" step="1000" value="0" />
+          </label>
           <label>Mapa
             <input id="mapUrl" type="url" placeholder="https://maps.google.com/..." />
           </label>
@@ -110,12 +117,13 @@
       <div class="controls controls-io">
         <button id="exportJsonBtn" type="button">Exportar JSON</button>
         <button id="importJsonBtn" type="button">Subir JSON</button>
+        <button id="printBtn" type="button">Imprimir / PDF</button>
         <input id="importJsonInput" type="file" accept="application/json" class="hidden-file-input" />
       </div>
       <p id="syncStatus" class="sync-status" role="status" aria-live="polite">
         Cargando planificación...
       </p>
-      <small>Tip: en escritorio puedes arrastrar tarjetas; en celular usa Editar > Mover a día.</small>
+      <small>Tip: arrastra tarjetas o usa ▲▼ para reordenar; toca ✎ para editar cualquier dato.</small>
 
       <div class="unassigned-panel">
         <h3>Sin asignar</h3>
@@ -129,6 +137,7 @@
         <div class="stats" id="statsBar">
           <span id="statStops">0 paradas</span>
           <span id="statHours">0h</span>
+          <span id="statCost">$0</span>
           <span id="statDone">0 completadas</span>
           <span id="statWarnings">Sin sobrecarga</span>
         </div>
@@ -171,11 +180,62 @@
       <div class="quick-marks"></div>
       <div class="link-actions"></div>
       <div class="card-actions">
+        <button type="button" class="move-up icon-btn" aria-label="Subir" title="Subir">▲</button>
+        <button type="button" class="move-down icon-btn" aria-label="Bajar" title="Bajar">▼</button>
         <button type="button" class="duplicate icon-btn" aria-label="Duplicar" title="Duplicar">⧉</button>
         <button type="button" class="edit icon-btn" aria-label="Editar" title="Editar">✎</button>
         <button type="button" class="delete icon-btn" aria-label="Eliminar" title="Eliminar">🗑</button>
       </div>
       <div class="details hidden">
+        <div class="edit-section">
+          <label>¿Qué es?
+            <select class="edit-entry-kind">
+              <option value="place">Lugar</option>
+              <option value="trip">Viaje</option>
+            </select>
+          </label>
+          <div class="edit-place-fields">
+            <label>Nombre
+              <input class="edit-name" type="text" />
+            </label>
+            <label>Lugar
+              <input class="edit-location" type="text" />
+            </label>
+            <label>Tipo
+              <select class="edit-type">
+                <option value="Naturaleza">Naturaleza</option>
+                <option value="Aventura">Aventura</option>
+                <option value="Cultura">Cultura</option>
+                <option value="Gastronomía">Gastronomía</option>
+                <option value="Logística">Logística</option>
+              </select>
+            </label>
+          </div>
+          <div class="edit-trip-fields hidden">
+            <div class="field-grid">
+              <label>Inicio
+                <input class="edit-start" type="text" />
+              </label>
+              <label>Fin
+                <input class="edit-end" type="text" />
+              </label>
+            </div>
+            <label>Tipo de viaje
+              <select class="edit-mode">
+                <option value="Traslado">Auto</option>
+                <option value="Ferry">Ferry</option>
+              </select>
+            </label>
+          </div>
+          <div class="field-grid">
+            <label>Duración (h)
+              <input class="edit-duration" type="number" min="1" max="48" />
+            </label>
+            <label>Costo (CLP)
+              <input class="edit-cost" type="number" min="0" step="1000" />
+            </label>
+          </div>
+        </div>
         <div class="move-row">
           <label>Mover a día
             <select class="move-day"></select>
@@ -201,6 +261,11 @@
       </div>
     </article>
   </template>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden>
+    <span class="toast-message"></span>
+    <button type="button" class="toast-action"></button>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="app.js"></script>
