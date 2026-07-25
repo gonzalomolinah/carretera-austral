@@ -40,4 +40,14 @@ set
 
 delete from public.planner_state where id = 'carretera-austral-public';
 
+-- En `supabase db reset`, las migraciones se aplican antes de seed.sql. Si el
+-- modelo normalizado ya existe, poblarlo después de sembrar planner_state.
+do $$
+begin
+  if pg_catalog.to_regprocedure('private.backfill_planner_state()') is not null then
+    perform private.backfill_planner_state();
+  end if;
+end
+$$;
+
 commit;

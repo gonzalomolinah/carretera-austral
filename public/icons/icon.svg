@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Ruta Austral</title>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#87c7c4"/>
+      <stop offset="1" stop-color="#d9eadf"/>
+    </linearGradient>
+    <linearGradient id="road" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8d97b"/>
+      <stop offset="1" stop-color="#f4a261"/>
+    </linearGradient>
+    <clipPath id="frame">
+      <rect x="16" y="16" width="480" height="480" rx="112"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#frame)">
+    <rect width="512" height="512" fill="url(#sky)"/>
+    <circle cx="388" cy="116" r="48" fill="#fff4c7" opacity=".92"/>
+    <path d="M-28 322 116 156l76 88 88-140 110 152 54-66 96 132v206H-28Z" fill="#315f50"/>
+    <path d="m62 300 54-144 76 88 88-140 38 53-38-19-28 31-29-23-31 98-33-22-42 16Z" fill="#f4f1df" opacity=".9"/>
+    <path d="M-24 355c96-57 179-63 239-19 60 43 34 83 112 104 56 15 122-3 209-43v135H-24Z" fill="#173f35"/>
+    <path d="M235 522c58-91 43-130 8-158-26-21-24-42-4-63 13-14 30-27 49-39l52 29c-31 19-48 37-46 56 2 18 27 32 42 52 27 37 23 77 1 123Z" fill="url(#road)"/>
+    <path d="M290 287c-23 17-36 32-35 47" fill="none" stroke="#fff8dc" stroke-width="10" stroke-linecap="round" stroke-dasharray="2 24"/>
+    <path d="M279 403c12 21 14 47 6 78" fill="none" stroke="#fff8dc" stroke-width="10" stroke-linecap="round" stroke-dasharray="2 24"/>
+  </g>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="none" stroke="#173f35" stroke-width="20"/>
+</svg>
