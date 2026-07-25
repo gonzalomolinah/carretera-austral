@@ -1,78 +1,113 @@
-# carretera-austral
+# Ruta Austral
 
-Planificador interactivo (HTML/CSS/JS) para organizar un viaje por la Carretera Austral.
+PWA colaborativa y local-first para organizar un viaje por la Carretera Austral.
+Funciona con conectividad intermitente, se instala en el teléfono y mantiene una
+copia durable en el dispositivo antes de intentar sincronizar con Supabase.
 
-Base inicial incluida: itinerario referencial de **12 días partiendo desde Puerto Montt** (PMC).
+## Qué incluye
 
-## Funciones
+- Itinerario final y propuestas separadas para Molina, Iñaki, Nef y Ross.
+- Agenda por días, búsqueda, filtros, estados, responsables, costos y enlaces.
+- Mapa con OpenStreetMap, geocodificación y lista offline de coordenadas.
+- Gastos estimados/reales, división igual o personalizada y saldos sugeridos.
+- Checklist, contactos, enlaces, adjuntos locales y clima cacheado.
+- Deshacer/rehacer, snapshots de acciones destructivas y recuperación del sitio
+  anterior.
+- Exportación PDF, ICS, GPX, KML, GeoJSON y respaldo JSON versionado con los
+  adjuntos locales disponibles.
+- Temas claro/oscuro, navegación móvil, impresión y componentes accesibles.
+- Instalación PWA, shell offline y actualizaciones solo con consentimiento.
 
-- Agregar atracciones/paradas personalizadas
-- Organizar por día
-- Mover lugares con drag & drop entre días
-- Buscar, filtrar y ver carga estimada por día
-- Marcar cada parada con estados:
-  - Imprescindible
-  - Reservado
-  - Completado
-- Editar cualquier dato de una parada (nombre, lugar, tipo, duración, costo, ruta) desde el botón ✎
-- Reordenar dentro de un día con drag & drop o con los botones ▲▼ (compatible con táctil/iOS)
-- Costo estimado por parada con totales por día y por viaje
-- Notas por parada
-- Enlaces opcionales de mapa y reserva
-- Modo claro/oscuro (respeta la preferencia del sistema)
-- Exportar a PDF / imprimir el itinerario
-- Deshacer la última acción destructiva (borrar, reiniciar, importar)
-- Persistencia local en navegador (`localStorage`)
-- Autosave remoto con detección de conflictos usando `updated_at`
-- Sincronización en vivo entre dispositivos con Supabase Realtime
+El acceso compartido es deliberadamente simple: cualquiera con el enlace de la
+aplicación puede editar. No hay cuentas ni contraseñas.
 
-## Uso rápido
+## Desarrollo
 
-1. Abre `index.html` en tu navegador.
-2. Crea días y agrega atracciones.
-3. Arrastra tarjetas para reordenar o mover entre días.
+Requiere Node.js 22 o superior.
 
-## Conectar a Supabase
+```powershell
+npm install
+npm run dev
+```
 
-La app ya quedó preparada para guardar/cargar estado completo en Supabase.
+Comandos de verificación:
 
-### 1) Crear estructura (tabla + permisos + policies)
+```powershell
+npm run typecheck
+npm test
+npm run build
+npm run preview
+```
 
-Ejecuta `supabase/schema.sql` en el SQL Editor.
+Las pruebas E2E se ejecutan con `npm run test:e2e` después de instalar Chromium
+y WebKit para Playwright. La configuración prueba móvil y escritorio.
 
-### 2) Cargar datos iniciales
+## Datos y sincronización
 
-Ejecuta `supabase/seed.sql` en el SQL Editor.
+IndexedDB (Dexie) es la fuente inmediata del dispositivo. Cada mutación guarda el
+workspace y su operación pendiente en una sola transacción. Cuando vuelve la red,
+las operaciones se aplican de forma idempotente en Supabase; una edición nueva
+hecha mientras hay una petición en curso nunca se reemplaza por el snapshot que
+está llegando.
 
-### 2b) Activar sincronización en vivo (opcional)
+La primera apertura también migra `carretera-austral-planner-v2` desde
+`localStorage`. El blob original se conserva como recuperación. La versión
+anterior queda disponible en `/legacy/index.html` en modo de solo lectura.
 
-Ejecuta `supabase/migration.sql` una vez para habilitar Supabase Realtime. Con esto, los cambios hechos en un navegador aparecen en otros sin recargar. Si hay cambios locales sin guardar, se avisa de conflicto en lugar de pisarlos.
+### Supabase
 
-### 3) Pegar credenciales en la app
+Las variables públicas son:
 
-En `app.js` reemplaza:
+```text
+VITE_SUPABASE_URL
+VITE_SUPABASE_PUBLISHABLE_KEY
+```
 
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
+No se debe usar una `service_role` en el navegador ni en Vercel.
 
-con los valores de tu proyecto (Project Settings > API).
+Para operar la PWA basta aplicar
+`supabase/migrations/202607180002_pwa_workspace_sync.sql`: contiene el contrato
+exacto del cliente, acceso público por enlace e idempotencia. La migración
+`202607180001_ruta_austral.sql` deja un modelo normalizado side-by-side y una
+migración conservadora de `planner_state`; es opcional y no participa del flujo
+actual.
 
-### 4) Probar
+El contrato y las consultas de comprobación están en
+`supabase/PWA_SYNC_RUNBOOK.md`. La segunda migración tiene una prueba ejecutable
+en PostgreSQL puro: `supabase/tests/workspace_sync.sql`.
 
-1. Abre `index.html`.
-2. Crea/edita/mueve paradas.
-3. Presiona `Guardar planificación` si quieres forzar el guardado; también hay autosave.
-4. Recarga la pagina en otro navegador/usuario: se verá el nuevo estado desde Supabase.
+## PWA y despliegue
 
-Si no configuras las credenciales, la app sigue funcionando con `localStorage` como respaldo.
+Vite genera el manifest, iconos y un service worker `injectManifest`. El shell y
+los assets de la aplicación se precargan; Supabase y las teselas de mapas siempre
+pasan por red. Los adjuntos viven como `Blob` en IndexedDB y el clima usa una
+copia explícita con fecha de actualización. El respaldo JSON incorpora esos
+blobs como datos base64, informa cualquier archivo ausente y también acepta el
+formato antiguo que sólo contenía el workspace. Los archivos eliminados se
+conservan para Deshacer; la limpieza manual borra únicamente huérfanos sin
+snapshots y con al menos 30 días de antigüedad.
+
+`vercel.json` configura el fallback SPA y las cabeceras de caché. En Vercel:
+
+- Framework: Vite.
+- Build: `npm run build`.
+- Output: `dist`.
+- Añadir las dos variables públicas de Supabase si se quiere reemplazar la
+  configuración de desarrollo incluida.
+
+En iPhone, abrir el despliegue una vez con internet y usar **Compartir → Añadir a
+pantalla de inicio**.
 
 ## Estructura
 
-- `index.html` interfaz principal
-- `style.css` estilos
-- `app.js` lógica de estado e interacción
-- `supabase/schema.sql` estructura y seguridad mínima de la tabla
-- `supabase/seed.sql` estado inicial del itinerario
-- `supabase/migration.sql` activa la sincronización en vivo (Realtime)
-
-La base se mantiene simple: cada planificación sigue guardándose como un único `state_json` en `planner_state`.
+```text
+src/domain/       tipos, normalización, seed y selectores puros
+src/data/         IndexedDB, migración local, adjuntos y comandos
+src/sync/         outbox, Supabase y Realtime
+src/components/   sistema visual y componentes accesibles
+src/features/     itinerario, mapa, gastos y centro operativo
+src/exports/      PDF, calendario, geodatos y JSON
+src/pwa/          registro y ciclo de actualización
+supabase/         migraciones, runbooks y pruebas SQL
+public/legacy/    aplicación anterior en modo recuperación
+```
